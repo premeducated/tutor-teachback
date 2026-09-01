@@ -11,6 +11,12 @@
  * the recording would silently freeze on the last drawn frame while the audio kept running.
  * Recording the screen track directly is not tied to the page's rendering loop, so it cannot
  * freeze. Two files that are always right beat one file that is usually right.
+ *
+ * THE QUESTION FLOW is Lucas's, 2026-09-01: "start with the cold vignette, no answer, allow
+ * them to explain but give them a timer and when they're ready they can move on and see the
+ * answer, still recording. If they got it wrong I want to capture their reactions." So each
+ * question has two phases, the answer is revealed by them and not by a clock, and the second
+ * phase has its own timer and its own prompt.
  */
 (function () {
   'use strict';
@@ -18,9 +24,10 @@
   var CLOUD = 'dyqrlzcbs';
   var PRESET = 'tutor_teachback';
   var ENDPOINT = 'https://api.cloudinary.com/v1_1/' + CLOUD + '/video/upload';
-  var CAP_MS = 12 * 60 * 1000;          // hard stop
-  var CHUNK = 6 * 1024 * 1024;          // Cloudinary wants 5MB or more per chunk except the last
+  var CAP_MS = 15 * 60 * 1000;
+  var CHUNK = 6 * 1024 * 1024;
   var N_QUESTIONS = 2;
+  var HILITE = '#FFF08A';
 
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
@@ -29,49 +36,166 @@
     applicant: params.get('a') || '',
     name: params.get('n') || '',
     email: params.get('e') || '',
+    assigned: (params.get('q') || '').split(',').filter(Boolean),
     camStream: null, scrStream: null,
     recs: [], parts: {}, blobs: [],
-    startedAt: 0, tick: null, level: null,
-    questions: [], shown: 0
+    startedAt: 0, phaseAt: 0, tick: null, level: null,
+    bank: null, questions: [], at: 0, phase: 'teach',
+    picks: { l1: false, l2all: false, subs: [] }
   };
 
   // ---------------- screens ----------------
   function show(which) {
-    ['gate', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
+    ['gate', 'pick', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
       $(s).classList.toggle('hidden', s !== which);
     });
-    var step = { gate: 0, setup: 1, record: 2, upload: 3, done: 3 }[which];
+    var step = { gate: 0, pick: 1, setup: 2, record: 3, upload: 4, done: 4 }[which];
     [].forEach.call($('steps').children, function (d, i) { d.classList.toggle('on', i <= step); });
     window.scrollTo(0, 0);
   }
   function flag(id, msg, bad) {
-    var el = $(id);
-    el.textContent = msg;
-    el.classList.toggle('bad', !!bad);
-    el.classList.remove('hidden');
+    var el = $(id); el.textContent = msg;
+    el.classList.toggle('bad', !!bad); el.classList.remove('hidden');
   }
   function unflag(id) { $(id).classList.add('hidden'); }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  // ---------------- the bank ----------------
+  function bank() {
+    if (state.bank) return state.bank;
+    try { state.bank = JSON.parse(atob(window.__TB)); } catch (e) { state.bank = null; }
+    return state.bank;
+  }
 
   // ---------------- gate ----------------
   if (state.name) $('n').value = state.name;
   if (state.email) $('e').value = state.email;
 
-  $('toSetup').addEventListener('click', function () {
+  $('toPick').addEventListener('click', function () {
     var n = $('n').value.trim(), e = $('e').value.trim();
     if (n.length < 2) return flag('gateflag', 'Please put your full name in.');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return flag('gateflag', 'That email does not look right. Use the one you applied with.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) {
+      return flag('gateflag', 'That email does not look right. Use the one you applied with.');
+    }
     state.name = n; state.email = e;
     unflag('gateflag');
+    buildPicker();
+    show('pick');
+  });
+
+  // ---------------- what they tutor ----------------
+  function buildPicker() {
+    var b = bank();
+    if (!b) return;
+    var subs = (b.groups['Level 2'] || []);
+    $('subs').innerHTML = subs.map(function (s, i) {
+      return '<label class="pick"><input type="checkbox" class="sub" value="' + esc(s) + '">'
+           + '<span><b>' + esc(s) + '</b></span></label>';
+    }).join('');
+    [].forEach.call(document.querySelectorAll('#pick input[type=checkbox]'), function (cb) {
+      cb.addEventListener('change', syncPicker);
+    });
+    syncPicker();
+  }
+
+  function syncPicker() {
+    state.picks.l1 = $('c1').checked;
+    state.picks.l2all = $('c2').checked;
+    state.picks.subs = [].filter.call(document.querySelectorAll('.sub'), function (c) {
+      return c.checked;
+    }).map(function (c) { return c.value; });
+
+    // Level 2 as a whole and picking single subjects are the same choice made two ways, so
+    // ticking the whole thing takes the subject list off the table rather than leaving a
+    // half-filled second control on screen.
+    $('subsWrap').classList.toggle('hidden', state.picks.l2all);
+    if (state.picks.l2all) {
+      [].forEach.call(document.querySelectorAll('.sub'), function (c) { c.checked = false; });
+      state.picks.subs = [];
+    }
+    [].forEach.call(document.querySelectorAll('#pick .pick'), function (l) {
+      var cb = l.querySelector('input');
+      l.classList.toggle('on', cb && cb.checked);
+    });
+    var pool = poolFor();
+    $('pickSummary').textContent = pool.total
+      ? pool.total + ' question' + (pool.total === 1 ? '' : 's') + ' to draw from'
+      : '';
+    unflag('pickflag');
+  }
+
+  function poolFor() {
+    var b = bank() || { questions: [] };
+    var l1 = state.picks.l1
+      ? b.questions.filter(function (q) { return q.level === 'Level 1'; }) : [];
+    var l2 = [];
+    if (state.picks.l2all) {
+      l2 = b.questions.filter(function (q) { return q.level === 'Level 2'; });
+    } else if (state.picks.subs.length) {
+      l2 = b.questions.filter(function (q) {
+        return q.level === 'Level 2' && state.picks.subs.indexOf(q.group) >= 0;
+      });
+    }
+    return { l1: l1, l2: l2, total: l1.length + l2.length };
+  }
+
+  $('toSetup').addEventListener('click', function () {
+    var pool = poolFor();
+    if (!pool.total) {
+      return flag('pickflag', 'Pick at least one. If you do not want all of Level 2, tick the '
+        + 'individual subjects you are comfortable with instead.');
+    }
     show('setup');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       flag('setupflag', 'This browser cannot record. Use Chrome, Edge, Firefox or Safari on a laptop.', true);
       $('askCam').disabled = true;
     } else if (!navigator.mediaDevices.getDisplayMedia) {
-      flag('setupflag', 'This device cannot share a screen, which almost always means a phone or a '
-        + 'tablet. You can still record your camera and voice, but if you want to draw or show '
+      flag('setupflag', 'This device cannot share a screen, which almost always means a phone or '
+        + 'a tablet. You can still record your camera and voice, but if you want to draw or show '
         + 'anything, stop and come back on a laptop.');
     }
   });
+
+  // ---------------- choosing the questions ----------------
+  function drawFrom(list, used) {
+    var free = list.filter(function (q) { return used.indexOf(q.id) < 0; });
+    var from = free.length ? free : list;
+    return from.length ? from[Math.floor(Math.random() * from.length)] : null;
+  }
+
+  function chooseQuestions() {
+    var b = bank();
+    if (!b) return [];
+    // If the invitation named the questions, use those. The bot picks the least used ones so
+    // two applicants in a row do not get the same pair.
+    if (state.assigned.length) {
+      var byId = {};
+      b.questions.forEach(function (q) { byId[q.id] = q; });
+      var named = state.assigned.map(function (i) { return byId[i]; }).filter(Boolean);
+      if (named.length >= N_QUESTIONS) return named.slice(0, N_QUESTIONS);
+    }
+    var pool = poolFor(), out = [], used = [];
+    // One from each level when they teach both, which is what the interview instructions
+    // have always asked candidates to prepare.
+    if (pool.l1.length && pool.l2.length) {
+      [pool.l1, pool.l2].forEach(function (list) {
+        var q = drawFrom(list, used);
+        if (q) { out.push(q); used.push(q.id); }
+      });
+    }
+    var all = pool.l1.concat(pool.l2);
+    while (out.length < N_QUESTIONS && all.length) {
+      var q = drawFrom(all, used);
+      if (!q) break;
+      out.push(q); used.push(q.id);
+      if (used.length >= all.length) break;
+    }
+    return out;
+  }
 
   // ---------------- permissions ----------------
   $('askCam').addEventListener('click', function () {
@@ -87,9 +211,7 @@
       meter(s);
       unflag('setupflag');
       if (!navigator.mediaDevices.getDisplayMedia) readyCheck();
-    }).catch(function (err) {
-      flag('setupflag', permMessage(err, 'camera and microphone'), true);
-    });
+    }).catch(function (err) { flag('setupflag', permMessage(err, 'camera and microphone'), true); });
   });
 
   $('askScreen').addEventListener('click', function () {
@@ -100,25 +222,22 @@
       $('pvScr').srcObject = s;
       $('askScreen').textContent = 'Screen is being shared';
       $('askScreen').disabled = true;
-      // If they hit the browser's own "Stop sharing" button mid-recording, close it out
-      // cleanly rather than writing a file whose second half is a black rectangle.
       s.getVideoTracks()[0].addEventListener('ended', function () {
         if (state.recs.length) finish();
       });
       unflag('setupflag');
       readyCheck();
-    }).catch(function (err) {
-      flag('setupflag', permMessage(err, 'screen'), true);
-    });
+    }).catch(function (err) { flag('setupflag', permMessage(err, 'screen'), true); });
   });
 
   function permMessage(err, what) {
     var n = err && err.name;
-    if (n === 'NotAllowedError') return 'You turned down the ' + what + ' request, or the browser blocked it. '
-      + 'Reload the page and allow it. On a Mac you may also need System Settings, Privacy and Security.';
+    if (n === 'NotAllowedError') return 'You turned down the ' + what + ' request, or the browser '
+      + 'blocked it. Reload the page and allow it. On a Mac you may also need System Settings, '
+      + 'Privacy and Security.';
     if (n === 'NotFoundError' || n === 'DevicesNotFoundError') return 'No ' + what + ' was found on this computer.';
-    if (n === 'NotReadableError') return 'Another program is holding the ' + what + '. Close Zoom, Teams or '
-      + 'any other call and try again.';
+    if (n === 'NotReadableError') return 'Another program is holding the ' + what + '. Close Zoom, '
+      + 'Teams or any other call and try again.';
     return 'The ' + what + ' could not be started (' + (n || 'unknown') + ').';
   }
 
@@ -143,30 +262,130 @@
     } catch (e) { /* the meter is a nicety, never a blocker */ }
   }
 
-  // ---------------- questions ----------------
-  function bank() {
-    try { return JSON.parse(atob(window.__TB)); } catch (e) { return []; }
-  }
-  function pick() {
-    var all = bank().slice(), out = [];
-    for (var i = 0; i < N_QUESTIONS && all.length; i++) {
-      out.push(all.splice(Math.floor(Math.random() * all.length), 1)[0]);
-    }
-    return out;
-  }
+  // ---------------- rendering a question ----------------
   function render(q, idx) {
-    var html = '<div class="tag">Question ' + (idx + 1) + ' of ' + state.questions.length
-      + '  ·  ' + esc(q.exam) + '</div><div class="stem">' + esc(q.stem) + '</div><ol class="opts">';
+    var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
+      + '  ·  ' + esc(q.level) + '  ·  ' + esc(q.group) + '</div>'
+      + '<div class="stem">' + esc(q.stem) + '</div><ol class="opts">';
     q.options.forEach(function (o) { html += '<li>' + esc(o) + '</li>'; });
-    html += '</ol><div class="ans">The correct answer is <b>' + esc(q.answer) + '</b>. '
-      + 'Teach it. Assume the student picked something else and does not know why they were wrong.</div>';
+    html += '</ol>';
     $('qbox').innerHTML = html;
+    state.phase = 'teach';
+    state.phaseAt = Date.now();
+    $('reveal').classList.remove('hidden');
+    $('next').classList.add('hidden');
   }
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+
+  function revealAnswer() {
+    var q = state.questions[state.at];
+    if (!q || state.phase !== 'teach') return;
+    // The card is theirs to type in by now, so the answer is grafted onto the DOM rather than
+    // re-rendered. Re-rendering would wipe whatever they highlighted or wrote while teaching.
+    var lis = $('qbox').querySelectorAll('ol.opts li');
+    [].forEach.call(lis, function (li) {
+      if (li.textContent.trim().replace(/\s+/g, ' ') === q.answer.trim().replace(/\s+/g, ' ')) {
+        li.classList.add('right');
+      }
+    });
+    var box = document.createElement('div');
+    box.className = 'reveal';
+    box.innerHTML = '<h3>The answer is ' + esc(q.answer) + '</h3>'
+      + '<p>' + esc(q.explanation) + '</p>'
+      + '<div class="prompt">Keep going, you are still recording. If that is where you landed, '
+      + 'say what you would check with the student to be sure they follow it. If it is not, say '
+      + 'so out loud and teach it from here. That is the part we are most interested in.</div>';
+    $('qbox').appendChild(box);
+    state.phase = 'after';
+    state.phaseAt = Date.now();
+    $('reveal').classList.add('hidden');
+    $('next').classList.remove('hidden');
+    $('next').textContent = (state.at + 1 < state.questions.length)
+      ? 'Next question' : 'Finish and send';
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  $('reveal').addEventListener('click', revealAnswer);
+  $('next').addEventListener('click', function () {
+    if (state.at + 1 < state.questions.length) {
+      state.at += 1;
+      render(state.questions[state.at], state.at);
+      window.scrollTo(0, 0);
+    } else {
+      finish();
+    }
+  });
+
+  // ---------------- the doc tools ----------------
+  function keepSelection(btn, fn) {
+    btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    btn.addEventListener('click', fn);
+  }
+  keepSelection($('bBold'), function () { document.execCommand('bold'); });
+  keepSelection($('bMark'), function () {
+    // styleWithCSS matters: without it some browsers emit <font> and the highlight is lost.
+    try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+    document.execCommand('hiliteColor', false, HILITE);
+  });
+  keepSelection($('bClear'), function () { document.execCommand('removeFormat'); });
+
+  // ---------------- drawing ----------------
+  var ink = $('ink'), ctx = ink.getContext('2d');
+  var strokes = [], cur = null, penOn = false, penColor = '#D93A3A';
+
+  function sizeInk() {
+    ink.width = window.innerWidth;
+    ink.height = window.innerHeight;
+    redraw();
+  }
+  function redraw() {
+    ctx.clearRect(0, 0, ink.width, ink.height);
+    var off = window.scrollY;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 3;
+    strokes.concat(cur ? [cur] : []).forEach(function (s) {
+      if (s.pts.length < 2) return;
+      ctx.strokeStyle = s.c;
+      ctx.beginPath();
+      ctx.moveTo(s.pts[0].x, s.pts[0].y - off);
+      for (var i = 1; i < s.pts.length; i++) ctx.lineTo(s.pts[i].x, s.pts[i].y - off);
+      ctx.stroke();
     });
   }
+  window.addEventListener('resize', sizeInk);
+  // Strokes are stored in PAGE coordinates and drawn with the scroll subtracted, so a drawing
+  // stays on the thing it was drawn on instead of sliding around when the page moves.
+  window.addEventListener('scroll', redraw, { passive: true });
+  sizeInk();
+
+  keepSelection($('bPen'), function () {
+    penOn = !penOn;
+    ink.classList.toggle('live', penOn);
+    $('bPen').classList.toggle('on', penOn);
+    $('bPen').textContent = penOn ? 'Drawing, click to stop' : 'Draw on the screen';
+  });
+  keepSelection($('bErase'), function () { strokes = []; cur = null; redraw(); });
+  [].forEach.call(document.querySelectorAll('.swatch'), function (b) {
+    keepSelection(b, function () {
+      penColor = b.getAttribute('data-c');
+      [].forEach.call(document.querySelectorAll('.swatch'), function (o) {
+        o.classList.toggle('on', o === b);
+      });
+    });
+  });
+  ink.addEventListener('pointerdown', function (e) {
+    if (!penOn) return;
+    ink.setPointerCapture(e.pointerId);
+    cur = { c: penColor, pts: [{ x: e.clientX, y: e.clientY + window.scrollY }] };
+  });
+  ink.addEventListener('pointermove', function (e) {
+    if (!cur) return;
+    cur.pts.push({ x: e.clientX, y: e.clientY + window.scrollY });
+    redraw();
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+    ink.addEventListener(ev, function () {
+      if (cur) { strokes.push(cur); cur = null; redraw(); }
+    });
+  });
 
   // ---------------- recording ----------------
   function pickMime(candidates) {
@@ -183,25 +402,22 @@
     if (mime) opts.mimeType = mime;
     var rec;
     try { rec = new MediaRecorder(stream, opts); }
-    catch (e) { rec = new MediaRecorder(stream); }   // last resort: whatever the browser will give
+    catch (e) { rec = new MediaRecorder(stream); }
     state.parts[key] = [];
     rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) state.parts[key].push(ev.data); };
     rec.__key = key;
     rec.__mime = rec.mimeType || mime || 'video/webm';
-    // A timeslice means a crash or a killed tab still leaves usable parts in memory, and it
-    // keeps one enormous buffer from being built up in a single blob.
     rec.start(4000);
     state.recs.push(rec);
     return rec;
   }
 
   $('start').addEventListener('click', function () {
-    state.questions = pick();
-    if (!state.questions.length) { alert('The question bank did not load. Reload the page.'); return; }
+    state.questions = chooseQuestions();
+    if (!state.questions.length) { alert('No questions matched what you picked. Go back and pick again.'); return; }
 
     var mic = state.camStream.getAudioTracks();
     if (state.scrStream) {
-      // The screen file is the one that matters, so the voice goes on it.
       var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
       startRecorder('screen', screenPlusVoice, 1200000);
       startRecorder('camera', state.camStream, 350000);
@@ -210,33 +426,23 @@
     }
 
     state.startedAt = Date.now();
-    state.shown = 0;
+    state.at = 0;
     render(state.questions[0], 0);
-    $('next').textContent = state.questions.length > 1 ? 'Second question' : 'Done with this one';
-    $('next').disabled = state.questions.length < 2;
     show('record');
 
     state.tick = setInterval(function () {
-      var ms = Date.now() - state.startedAt;              // wall clock, never a tick count,
-      var s = Math.floor(ms / 1000);                      // so throttling cannot distort it
+      var ms = Date.now() - state.startedAt;          // wall clock, never a tick count, so
+      var s = Math.floor(ms / 1000);                  // throttling cannot distort it
       $('clock').textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
       var left = Math.max(0, CAP_MS - ms);
       $('cap').textContent = left > 60000
         ? 'Recording. ' + Math.ceil(left / 60000) + ' minutes left of the cap.'
         : 'Recording. Under a minute left, start wrapping up.';
+      var ps = Math.floor((Date.now() - state.phaseAt) / 1000);
+      $('phase').textContent = (state.phase === 'teach' ? 'Teaching this one: ' : 'Since the answer: ')
+        + Math.floor(ps / 60) + ':' + ('0' + (ps % 60)).slice(-2);
       if (ms >= CAP_MS) finish();
     }, 500);
-  });
-
-  $('next').addEventListener('click', function () {
-    if (state.shown + 1 < state.questions.length) {
-      state.shown += 1;
-      render(state.questions[state.shown], state.shown);
-      if (state.shown + 1 >= state.questions.length) {
-        $('next').disabled = true;
-        $('next').textContent = 'That is both of them';
-      }
-    }
   });
 
   $('stop').addEventListener('click', function () {
@@ -255,7 +461,6 @@
     finishing = true;
     clearInterval(state.tick);
     clearInterval(state.level);
-
     var pending = state.recs.length;
     if (!pending) return;
     state.recs.forEach(function (rec) {
@@ -278,11 +483,15 @@
 
   // ---------------- upload ----------------
   function contextString(role) {
-    // Cloudinary context is key=value pairs joined by |, and | and = have to be escaped.
     var esc2 = function (v) { return String(v).replace(/([=|])/g, '\\$1'); };
+    var picks = [];
+    if (state.picks.l1) picks.push('Level 1');
+    if (state.picks.l2all) picks.push('Level 2 all');
+    if (state.picks.subs.length) picks.push(state.picks.subs.join(' and '));
     return ['name=' + esc2(state.name), 'email=' + esc2(state.email),
             'applicant=' + esc2(state.applicant || 'none'), 'role=' + role,
             'minutes=' + Math.round((Date.now() - state.startedAt) / 60000),
+            'teaches=' + esc2(picks.join(', ') || 'not stated'),
             'questions=' + esc2(state.questions.map(function (q) { return q.id; }).join(' '))
            ].join('|');
   }
@@ -297,7 +506,8 @@
     fd.append('context', contextString(role));
     return fetch(ENDPOINT, {
       method: 'POST', body: fd,
-      headers: { 'X-Unique-Upload-Id': uniq, 'Content-Range': 'bytes ' + start + '-' + (end - 1) + '/' + total }
+      headers: { 'X-Unique-Upload-Id': uniq,
+                 'Content-Range': 'bytes ' + start + '-' + (end - 1) + '/' + total }
     }).then(function (r) {
       if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + t.slice(0, 200)); });
       return r.json();
@@ -306,22 +516,18 @@
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-  function uploadOne(item, done, total, onBytes) {
+  function uploadOne(item, onBytes) {
     var uniq = 'tb-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
     var size = item.blob.size, start = 0;
     function step() {
       if (start >= size) return Promise.resolve();
-      var end = Math.min(start + CHUNK, size);
-      var attempt = 0;
+      var end = Math.min(start + CHUNK, size), attempt = 0;
       function tryChunk() {
         attempt += 1;
         return putChunk(item.blob, item.role, start, end, size, uniq).then(function () {
-          onBytes(end - start);
-          start = end;
-          return step();
+          onBytes(end - start); start = end; return step();
         }).catch(function (err) {
-          // A dropped chunk is usually a wifi blip, and the applicant has already spent ten
-          // minutes. Three tries with a backoff before we hand it back to them.
+          // A dropped chunk is usually a wifi blip, and they have already spent ten minutes.
           if (attempt >= 3) throw err;
           return sleep(1200 * attempt).then(tryChunk);
         });
@@ -333,43 +539,37 @@
 
   function sendAll() {
     if (!state.blobs.length) {
-      flag('upflag', 'Nothing was recorded. Reload and try again, and if it happens twice, '
-        + 'reply to the email you got and say so.', true);
+      flag('upflag', 'Nothing was recorded. Reload and try again, and if it happens twice, reply '
+        + 'to the email you got and say so.', true);
       return;
     }
-    var total = state.blobs.reduce(function (n, b) { return n + b.blob.size; }, 0);
-    var sent = 0;
+    var total = state.blobs.reduce(function (n, b) { return n + b.blob.size; }, 0), sent = 0;
     $('upflag').classList.add('hidden');
     $('retry').classList.add('hidden');
-    $('upNote').textContent = 'Leave this page open. Closing it now loses the recording. '
-      + 'This is about ' + Math.max(1, Math.round(total / 1024 / 1024)) + ' MB.';
-
+    $('upNote').textContent = 'Leave this page open. Closing it now loses the recording. This is '
+      + 'about ' + Math.max(1, Math.round(total / 1024 / 1024)) + ' MB.';
     function bytes(n) {
       sent += n;
       var pct = Math.min(99, Math.round((sent / total) * 100));
       $('bar').style.width = pct + '%';
       $('upPct').textContent = pct + '%';
     }
-
     var chain = Promise.resolve();
     state.blobs.forEach(function (item) {
-      chain = chain.then(function () { return uploadOne(item, sent, total, bytes); });
+      chain = chain.then(function () { return uploadOne(item, bytes); });
     });
     chain.then(function () {
-      $('bar').style.width = '100%';
-      $('upPct').textContent = '100%';
-      show('done');
+      $('bar').style.width = '100%'; $('upPct').textContent = '100%'; show('done');
     }).catch(function (err) {
       flag('upflag', 'The upload did not finish (' + String(err.message || err).slice(0, 160)
-        + '). Your recording is still here in the page, so try again. If it will not go, '
-        + 'download the file and reply to your application email with it attached.', true);
+        + '). Your recording is still here in the page, so try again. If it will not go, download '
+        + 'the file and reply to your application email with it attached.', true);
       $('retry').classList.remove('hidden');
       $('dl').classList.remove('hidden');
     });
   }
 
   $('retry').addEventListener('click', function () { sendAll(); });
-
   $('dl').addEventListener('click', function () {
     state.blobs.forEach(function (item) {
       var a = document.createElement('a');

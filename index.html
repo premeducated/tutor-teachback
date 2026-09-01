@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Premeducated  ·  Teaching sample</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F0E7; --paper-top:#FAF7F0; --card:#FFFFFF;
+  --ink:#10314F; --ink-soft:#52647A; --teal:#0E8C81; --teal-ink:#0A6E66;
+  --line:#E6DFD2; --warn:#B4531F; --bad:#A32B2B;
+  --shadow:0 1px 2px rgba(16,42,69,.05),0 8px 22px rgba(16,42,69,.06);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:linear-gradient(180deg,var(--paper-top) 0%,var(--paper) 220px,var(--paper) 100%);
+  color:var(--ink); -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:760px;margin:0 auto;padding:38px 20px 64px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:26px}
+.mark{width:30px;height:30px;border-radius:8px;background:var(--teal);display:grid;place-items:center;
+  color:#fff;font-weight:800;font-size:15px;letter-spacing:-.5px}
+.brand{font-weight:700;letter-spacing:-.2px}
+.brand span{color:var(--ink-soft);font-weight:500}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;
+  box-shadow:var(--shadow);margin-bottom:18px}
+h1{font-size:26px;line-height:1.22;margin:0 0 12px;letter-spacing:-.5px}
+h2{font-size:17px;margin:0 0 10px;letter-spacing:-.2px}
+p{line-height:1.6;margin:0 0 14px;color:var(--ink-soft)}
+p strong,li strong{color:var(--ink)}
+ol,ul{line-height:1.6;color:var(--ink-soft);padding-left:20px;margin:0 0 14px}
+li{margin-bottom:7px}
+label{display:block;font-weight:600;font-size:13px;margin:0 0 6px}
+input[type=text],input[type=email]{width:100%;padding:11px 13px;border:1px solid var(--line);
+  border-radius:9px;font:inherit;font-size:15px;background:#fff;color:var(--ink);margin-bottom:14px}
+input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:transparent}
+button{font:inherit;font-weight:650;border:0;border-radius:10px;padding:13px 22px;cursor:pointer;
+  background:var(--teal);color:#fff;letter-spacing:-.1px}
+button:hover{background:var(--teal-ink)}
+button:disabled{background:#C3CBD4;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.ghost:hover{background:#F7F4EE}
+button.stop{background:var(--bad)}
+button.stop:hover{background:#8A2222}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.note{font-size:13px;color:var(--ink-soft);line-height:1.55}
+.flag{border-left:3px solid var(--warn);background:#FDF6F1;padding:12px 14px;border-radius:0 9px 9px 0;
+  font-size:14px;line-height:1.55;color:#6B3A1C;margin:0 0 16px}
+.flag.bad{border-color:var(--bad);background:#FCF1F1;color:#7A2020}
+.ok{border-left:3px solid var(--teal);background:#F0F8F7;padding:12px 14px;border-radius:0 9px 9px 0;
+  font-size:14px;line-height:1.55;color:var(--teal-ink);margin:0 0 16px}
+.hidden{display:none !important}
+/* recording */
+.bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;
+  background:var(--ink);color:#fff;border-radius:12px;margin-bottom:16px;position:sticky;top:10px;z-index:5}
+.dot{width:10px;height:10px;border-radius:50%;background:#FF5A5A;display:inline-block;margin-right:8px;
+  animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:18px;letter-spacing:.3px}
+.bar .note{color:#B9C6D4}
+.q{border:1px solid var(--line);border-radius:12px;padding:22px;background:#fff}
+.q .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--teal-ink);background:#EAF5F3;padding:4px 9px;border-radius:20px;margin-bottom:12px}
+.q .stem{font-size:17px;line-height:1.6;color:var(--ink);margin-bottom:16px}
+.q ol.opts{list-style:upper-alpha;padding-left:22px}
+.q ol.opts li{color:var(--ink);margin-bottom:6px}
+.q .ans{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:15px}
+.q .ans b{color:var(--teal-ink)}
+.previews{display:flex;gap:12px;margin:16px 0}
+.previews figure{margin:0;flex:1}
+.previews video{width:100%;border-radius:10px;background:#0B1B2B;aspect-ratio:16/9;object-fit:cover}
+.previews figcaption{font-size:12px;color:var(--ink-soft);margin-top:6px}
+.meter{height:8px;background:#E9E4DA;border-radius:6px;overflow:hidden;margin:6px 0 0}
+.meter i{display:block;height:100%;background:var(--teal);width:0;transition:width .1s}
+.prog{height:10px;background:#E9E4DA;border-radius:6px;overflow:hidden;margin:14px 0 8px}
+.prog i{display:block;height:100%;background:var(--teal);width:0;transition:width .25s}
+.steps{display:flex;gap:6px;margin-bottom:22px}
+.steps div{flex:1;height:4px;border-radius:3px;background:#E4DED2}
+.steps div.on{background:var(--teal)}
+footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0}
+@media (max-width:620px){.wrap{padding:24px 16px 48px}h1{font-size:22px}.previews{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark">P</div>
+    <div class="brand">Premeducated <span>·  Teaching sample</span></div>
+  </header>
+
+  <div class="steps" id="steps"><div class="on"></div><div></div><div></div><div></div></div>
+
+  <!-- ---------- 1. gate ---------- -->
+  <section id="gate">
+    <div class="card">
+      <h1>Show us fifteen minutes of your teaching.</h1>
+      <p>This is the part of the application that actually decides it. You will see two board
+      questions you have not seen before, and you teach through them the way you would with a
+      student who is stuck. Nothing to install and no account to make.</p>
+      <ol>
+        <li><strong>Use a laptop or desktop.</strong> Sharing your screen is how we see you draw and
+        work, and phones cannot share a screen.</li>
+        <li><strong>Give the page your camera, microphone and screen.</strong> Your browser will ask.</li>
+        <li><strong>One take.</strong> The questions appear when you press Start and the clock runs from
+        there. Twelve minutes is the cap and most people use eight to ten.</li>
+        <li><strong>Teach, do not answer.</strong> We are not testing whether you know it. We are
+        watching how you take a student who is lost and leave them able to do the next one.</li>
+      </ol>
+      <p class="note">Whatever you would normally use on a session, use it here. A blank document,
+      a drawing app, a diagram. If you would not use anything, that is fine too.</p>
+    </div>
+    <div class="card">
+      <h2>Who is this</h2>
+      <label for="n">Your full name</label>
+      <input id="n" type="text" autocomplete="name" placeholder="First and last">
+      <label for="e">The email you applied with</label>
+      <input id="e" type="email" autocomplete="email" placeholder="you@example.com">
+      <div id="gateflag" class="flag hidden"></div>
+      <button id="toSetup">Continue</button>
+    </div>
+  </section>
+
+  <!-- ---------- 2. setup ---------- -->
+  <section id="setup" class="hidden">
+    <div class="card">
+      <h1>Let the page see and hear you.</h1>
+      <div id="setupflag" class="flag hidden"></div>
+      <p>Two prompts from your browser. Camera and microphone first, then the screen. When you pick
+      the screen, <strong>choose your whole screen</strong> rather than a single tab, so you can move
+      between whatever you use to teach.</p>
+      <div class="row">
+        <button id="askCam">1. Camera and microphone</button>
+        <button id="askScreen" class="ghost" disabled>2. Screen</button>
+      </div>
+      <div class="previews">
+        <figure><video id="pvCam" muted playsinline autoplay></video>
+          <figcaption>You<div class="meter"><i id="lvl"></i></div>Say something and the bar should move.</figcaption></figure>
+        <figure><video id="pvScr" muted playsinline autoplay></video>
+          <figcaption>Your screen</figcaption></figure>
+      </div>
+      <div id="ready" class="ok hidden">Camera, microphone and screen are all live. Press Start and
+      the first question appears.</div>
+      <button id="start" disabled>Start, and show me the first question</button>
+    </div>
+  </section>
+
+  <!-- ---------- 3. record ---------- -->
+  <section id="record" class="hidden">
+    <div class="bar">
+      <div><span class="dot"></span><span class="clock" id="clock">0:00</span>
+        <div class="note" id="cap">Recording. Twelve minute cap.</div></div>
+      <div class="row">
+        <button id="next" class="ghost" style="color:#fff;border-color:#3C5B7A">Second question</button>
+        <button id="stop" class="stop">Stop and send</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="q" id="qbox"></div>
+    </div>
+    <p class="note">Teach it out loud. Say what you would say. When you have finished the second one,
+    press Stop and send.</p>
+  </section>
+
+  <!-- ---------- 4. upload ---------- -->
+  <section id="upload" class="hidden">
+    <div class="card">
+      <h1 id="upTitle">Sending your recording.</h1>
+      <p id="upNote">Leave this page open. Closing it now loses the recording.</p>
+      <div class="prog"><i id="bar"></i></div>
+      <p class="note" id="upPct">0%</p>
+      <div id="upflag" class="flag bad hidden"></div>
+      <button id="retry" class="hidden">Try sending it again</button>
+      <button id="dl" class="ghost hidden">Download the file instead</button>
+    </div>
+  </section>
+
+  <!-- ---------- 5. done ---------- -->
+  <section id="done" class="hidden">
+    <div class="card">
+      <h1>That is in. Thank you.</h1>
+      <p>Your teaching sample reached us and it is attached to your application. Dr. Lucas watches
+      these himself and you will hear back either way.</p>
+      <p class="note">You can close this page.</p>
+    </div>
+  </section>
+
+  <footer>Premeducated  ·  premeducated.com</footer>
+</div>
+<script src="questions.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

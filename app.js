@@ -161,10 +161,33 @@
   });
 
   // ---------------- choosing the questions ----------------
+  // Seeded on the application id, so the draw is stable for one applicant and different
+  // between applicants. Plain randomness let somebody reload until they got a question they
+  // liked, which is the one form of gaming this page would otherwise invite.
+  function seedFrom(str) {
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  var rngState = seedFrom(state.applicant || String(Date.now()));
+  function rnd() {                       // mulberry32
+    rngState = (rngState + 0x6D2B79F5) >>> 0;
+    var t = rngState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
   function drawFrom(list, used) {
     var free = list.filter(function (q) { return used.indexOf(q.id) < 0; });
     var from = free.length ? free : list;
-    return from.length ? from[Math.floor(Math.random() * from.length)] : null;
+    if (!from.length) return null;
+    // Order the pool by id first so the same seed always sees the same order, whatever
+    // order the bank happens to be in.
+    from = from.slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+    return from[Math.floor(rnd() * from.length)];
   }
 
   function chooseQuestions() {
@@ -178,6 +201,7 @@
       var named = state.assigned.map(function (i) { return byId[i]; }).filter(Boolean);
       if (named.length >= N_QUESTIONS) return named.slice(0, N_QUESTIONS);
     }
+    rngState = seedFrom(state.applicant || String(Date.now()));
     var pool = poolFor(), out = [], used = [];
     // One from each level when they teach both, which is what the interview instructions
     // have always asked candidates to prepare.

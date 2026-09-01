@@ -77,6 +77,11 @@ button.stop:hover{background:#8A2222}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 .clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:18px;letter-spacing:.3px}
 .bar .note{color:#B9C6D4}
+/* A ghost button on the dark bar needs its own hover. The generic one goes light while
+   the text stays white, which makes the button unreadable exactly when the pointer is
+   sitting on it, which is always, because it replaces the button just clicked. */
+.bar .ghost{color:#fff;border-color:#3C5B7A;background:transparent}
+.bar .ghost:hover{background:rgba(255,255,255,.14);border-color:#5A7A9B}
 .tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid var(--line);
   border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:74px;z-index:39}
 .tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink)}
@@ -220,7 +225,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <div class="note" id="cap">Recording.</div></div>
       <div class="row">
         <button id="reveal">Show me the answer</button>
-        <button id="next" class="ghost hidden" style="color:#fff;border-color:#3C5B7A">Next question</button>
+        <button id="next" class="ghost hidden">Next question</button>
         <button id="stop" class="stop">Stop and send</button>
       </div>
     </div>

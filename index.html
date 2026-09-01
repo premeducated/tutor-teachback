@@ -72,18 +72,21 @@ button.stop:hover{background:#8A2222}
 /* ---- recording ---- */
 .bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 16px;
   background:var(--ink);color:#fff;border-radius:12px;margin-bottom:14px;position:sticky;top:10px;z-index:40}
+.bar.teach{background:#0A4A44}
+.bar.last{background:#6E2A16}
 .dot{width:10px;height:10px;border-radius:50%;background:#FF5A5A;display:inline-block;margin-right:8px;
   animation:pulse 1.4s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-.clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:18px;letter-spacing:.3px}
-.bar .note{color:#B9C6D4}
+.clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:22px;letter-spacing:.3px}
+.bar .note{color:#C9D4DF}
+.bar .note b{color:#fff}
 /* A ghost button on the dark bar needs its own hover. The generic one goes light while
    the text stays white, which makes the button unreadable exactly when the pointer is
    sitting on it, which is always, because it replaces the button just clicked. */
 .bar .ghost{color:#fff;border-color:#3C5B7A;background:transparent}
 .bar .ghost:hover{background:rgba(255,255,255,.14);border-color:#5A7A9B}
 .tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid var(--line);
-  border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:74px;z-index:39}
+  border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:78px;z-index:39}
 .tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink)}
 .tools button:hover{background:#EAE5DA}
 .tools button.on{background:var(--teal);color:#fff}
@@ -98,12 +101,9 @@ button.stop:hover{background:#8A2222}
 .stem{font-size:16.5px;line-height:1.62;color:var(--ink);margin-bottom:16px}
 ol.opts{list-style:upper-alpha;padding-left:24px;margin:0}
 ol.opts li{color:var(--ink);margin-bottom:7px;line-height:1.55}
-ol.opts li.right{background:#EAF7F0;border-radius:6px;padding:3px 8px;margin-left:-8px;font-weight:600}
-.reveal{margin-top:18px;padding:16px 18px;border-radius:10px;background:#F7FAF9;border:1px solid #D9E8E5}
-.reveal h3{margin:0 0 8px;font-size:15px;color:var(--teal-ink)}
-.reveal p{margin:0 0 10px;color:var(--ink);font-size:14.5px;line-height:1.6}
 .prompt{border-left:3px solid var(--gold);background:#FDF9EE;padding:12px 14px;border-radius:0 9px 9px 0;
-  font-size:14.5px;line-height:1.55;color:#6B5310;margin:12px 0 0}
+  font-size:14.5px;line-height:1.55;color:#6B5310;margin:0 0 12px}
+.prompt.teach{border-color:var(--teal);background:#F0F8F7;color:var(--teal-ink)}
 .scratch{margin-top:14px;border:1px dashed var(--line);border-radius:11px;padding:16px;background:#FFFDF8;
   min-height:120px;outline:none;font-size:15px;line-height:1.6}
 .scratch:empty:before{content:attr(data-ph);color:#A9B4C0}
@@ -118,6 +118,7 @@ ol.opts li.right{background:#EAF7F0;border-radius:6px;padding:3px 8px;margin-lef
 .steps{display:flex;gap:6px;margin-bottom:22px}
 .steps div{flex:1;height:4px;border-radius:3px;background:#E4DED2}
 .steps div.on{background:var(--teal)}
+.big{font-size:34px;font-weight:800;letter-spacing:-.8px;font-variant-numeric:tabular-nums;margin:4px 0 10px}
 #ink{position:fixed;inset:0;z-index:30;pointer-events:none}
 #ink.live{pointer-events:auto;cursor:crosshair}
 footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0}
@@ -139,17 +140,22 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
   <section id="gate">
     <div class="card">
       <h1>Show us how you teach.</h1>
-      <p>You will see board questions you have not seen before. Teach them out loud the way you
-      would in a real session. Nothing to install and no account to make.</p>
+      <p>You will see COMLEX and USMLE board questions you have not seen before. Teach them out
+      loud the way you would in a real session. Nothing to install and no account to make.</p>
       <ol>
         <li><strong>Use a laptop or desktop.</strong> Sharing your screen is how we see you work,
         and phones cannot share a screen.</li>
         <li><strong>Give the page your camera, microphone and screen.</strong> Your browser will ask.</li>
-        <li><strong>One take.</strong> The first question appears when you press Start and the clock
-        runs from there. Fifteen minutes is the cap and most people use ten.</li>
+        <li><strong>Two questions, on a clock.</strong> Each one gives you
+        <strong><span id="tWork">90 seconds</span></strong> to read it and work it, then
+        <strong><span id="tTeach">4 minutes</span></strong> to teach it. The clock moves on by
+        itself, so the whole thing takes about <strong><span id="tTotal">11 minutes</span></strong>.</li>
+        <li><strong>One take.</strong> Once you press Start the clock does not stop. Reloading the
+        page, closing it, or coming back later does not give you more time and does not change
+        your questions.</li>
         <li><strong>Teach, do not answer.</strong> You get the vignette cold, with no answer, the
-        same as the student would. Teach through it, then show yourself the answer when you are
-        ready and keep talking.</li>
+        same as the student would. Teach through it the way you would with someone who got it
+        wrong and does not know why.</li>
       </ol>
       <p class="note">You can type on the question, bold it, highlight it and draw on the screen,
       the same way you would use a shared document in a session.</p>
@@ -165,6 +171,27 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     </div>
   </section>
 
+  <!-- ---------- 1b. they already started, or already finished ---------- -->
+  <section id="resume" class="hidden">
+    <div class="card">
+      <h1>You already started this.</h1>
+      <p id="resumeNote"></p>
+      <div class="big" id="resumeClock"></div>
+      <p>The clock did not stop while the page was closed, and it will not stop now. Press
+      Continue, give the page your camera and screen again, and you pick up exactly where the
+      clock is. Anything you said before the page closed was not recorded, so cover it again.</p>
+      <button id="resumeGo">Continue</button>
+    </div>
+  </section>
+
+  <section id="again" class="hidden">
+    <div class="card">
+      <h1 id="againTitle"></h1>
+      <p id="againNote"></p>
+      <p class="note">You can close this page.</p>
+    </div>
+  </section>
+
   <!-- ---------- 2. what they tutor ---------- -->
   <section id="pick" class="hidden">
     <div class="card">
@@ -174,16 +201,16 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       <div id="pickflag" class="flag hidden"></div>
 
       <label class="pick" id="p1"><input type="checkbox" id="c1">
-        <span><b>COMLEX Level 1 and USMLE Step 1</b>
-        <span>All of it. Level 1 is not split by subject.</span></span></label>
+        <span><b>COMLEX Level 1 / USMLE Step 1</b>
+        <span>All of it. Level 1 and Step 1 are not split by subject.</span></span></label>
 
       <label class="pick" id="p2"><input type="checkbox" id="c2">
-        <span><b>COMLEX Level 2 and USMLE Step 2, all of it</b>
+        <span><b>COMLEX Level 2 / USMLE Step 2, all of it</b>
         <span>Every clinical subject we have questions in.</span></span></label>
 
       <div id="subsWrap" class="subs hidden">
-        <p class="note" style="margin:0 0 10px">Or leave that unticked and pick only the subjects
-        you are comfortable with:</p>
+        <p class="note" style="margin:0 0 10px">Or leave that unticked and pick only the Level 2
+        and Step 2 subjects you are comfortable with:</p>
         <div id="subs"></div>
       </div>
 
@@ -213,18 +240,18 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           <figcaption>Your screen</figcaption></figure>
       </div>
       <div id="ready" class="ok hidden">Camera, microphone and screen are all live. Press Start
-      and the first question appears.</div>
+      and the first question appears with its clock running.</div>
       <button id="start" disabled>Start, and show me the first question</button>
     </div>
   </section>
 
   <!-- ---------- 4. record ---------- -->
   <section id="record" class="hidden">
-    <div class="bar">
+    <div class="bar" id="bar">
       <div><span class="dot"></span><span class="clock" id="clock">0:00</span>
         <div class="note" id="cap">Recording.</div></div>
       <div class="row">
-        <button id="reveal">Show me the answer</button>
+        <button id="ready2" class="ghost">Start teaching now</button>
         <button id="next" class="ghost hidden">Next question</button>
         <button id="stop" class="stop">Stop and send</button>
       </div>
@@ -243,6 +270,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       <span class="note" style="margin-left:auto" id="phase"></span>
     </div>
 
+    <div class="prompt" id="phaseNote"></div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="q" id="qbox" contenteditable="true" spellcheck="false"></div>
     </div>
@@ -255,7 +283,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     <div class="card">
       <h1 id="upTitle">Sending your recording.</h1>
       <p id="upNote">Leave this page open. Closing it now loses the recording.</p>
-      <div class="prog"><i id="bar"></i></div>
+      <div class="prog"><i id="bar2"></i></div>
       <p class="note" id="upPct">0%</p>
       <div id="upflag" class="flag bad hidden"></div>
       <button id="retry" class="hidden">Try sending it again</button>

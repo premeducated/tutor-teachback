@@ -12,11 +12,17 @@
  * Recording the screen track directly is not tied to the page's rendering loop, so it cannot
  * freeze. Two files that are always right beat one file that is usually right.
  *
- * THE QUESTION FLOW is Lucas's, 2026-09-01: "start with the cold vignette, no answer, allow
- * them to explain but give them a timer and when they're ready they can move on and see the
- * answer, still recording. If they got it wrong I want to capture their reactions." So each
- * question has two phases, the answer is revealed by them and not by a clock, and the second
- * phase has its own timer and its own prompt.
+ * THE QUESTION FLOW, Lucas's ruling of 2026-09-01 evening, which REVERSED his ruling of that
+ * afternoon: there is no answer reveal. "Let's just get rid of the showing them the correct
+ * answer one. That's just extra steps." Do not put it back. The candidate gets the vignette
+ * cold and teaches it, and the page never holds the answer at all (see bank/build_bank.py).
+ *
+ * THE CLOCK is the other half of that ruling: "make sure that people can't reload and get a
+ * different question and that there's no way to cheat on this, like, they can't get extra
+ * time." So every question has a fixed window, read-and-work then teach, the page moves on by
+ * itself, and the schedule is a set of absolute wall-clock deadlines fixed at the moment they
+ * press Start and stored in this browser. A reload comes back to the same questions with the
+ * same deadlines still counting. Nothing on this page can ever move a deadline later.
  */
 (function () {
   'use strict';
@@ -24,32 +30,52 @@
   var CLOUD = 'dyqrlzcbs';
   var PRESET = 'tutor_teachback';
   var ENDPOINT = 'https://api.cloudinary.com/v1_1/' + CLOUD + '/video/upload';
-  var CAP_MS = 15 * 60 * 1000;
   var CHUNK = 6 * 1024 * 1024;
   var N_QUESTIONS = 2;
   var HILITE = '#FFF08A';
 
+  // The two numbers Lucas asked for a recommendation on. 90 seconds is the pace of the exam
+  // itself (COMLEX Level 1 gives about 82 seconds an item, Step 1 about 90), and four minutes
+  // is what one question takes in a real session when it is taught and not just answered.
+  // Two questions come to eleven minutes. Change these two lines and nothing else.
+  var WORK_S = 90;
+  var TEACH_S = 240;
+
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
+
+  // Shorter clocks for the browser test, and only when the page is served from this machine.
+  // A deployed copy ignores the parameter, so it is not a lever a candidate can pull.
+  var LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  if (LOCAL && params.get('t')) {
+    var t = params.get('t').split(',').map(Number);
+    if (t[0] > 0) WORK_S = t[0];
+    if (t[1] > 0) TEACH_S = t[1];
+  }
+  var Q_MS = (WORK_S + TEACH_S) * 1000;
+  var CAP_S = N_QUESTIONS * (WORK_S + TEACH_S);
 
   var state = {
     applicant: params.get('a') || '',
     name: params.get('n') || '',
     email: params.get('e') || '',
-    assigned: (params.get('q') || '').split(',').filter(Boolean),
     camStream: null, scrStream: null,
     recs: [], parts: {}, blobs: [],
-    startedAt: 0, phaseAt: 0, tick: null, level: null,
-    bank: null, questions: [], at: 0, phase: 'teach',
+    startedAt: 0, tick: null, level: null,
+    bank: null, questions: [], at: -1, phase: '',
+    sched: [], reloads: 0, resuming: null,
     picks: { l1: false, l2all: false, subs: [] }
   };
 
+  var EXAM = { 'Level 1': 'COMLEX Level 1 / USMLE Step 1', 'Level 2': 'COMLEX Level 2 / USMLE Step 2' };
+  function examLabel(level) { return EXAM[level] || level; }
+
   // ---------------- screens ----------------
   function show(which) {
-    ['gate', 'pick', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
+    ['gate', 'resume', 'again', 'pick', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
       $(s).classList.toggle('hidden', s !== which);
     });
-    var step = { gate: 0, pick: 1, setup: 2, record: 3, upload: 4, done: 4 }[which];
+    var step = { gate: 0, resume: 0, again: 4, pick: 1, setup: 2, record: 3, upload: 4, done: 4 }[which];
     [].forEach.call($('steps').children, function (d, i) { d.classList.toggle('on', i <= step); });
     window.scrollTo(0, 0);
   }
@@ -63,6 +89,15 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
+  function mmss(sec) {
+    sec = Math.max(0, Math.round(sec));
+    return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+  }
+  function spoken(sec) {
+    if (sec % 60 === 0) return (sec / 60) + ' minute' + (sec === 60 ? '' : 's');
+    if (sec < 120) return sec + ' seconds';
+    return Math.floor(sec / 60) + ' minutes ' + (sec % 60) + ' seconds';
+  }
 
   // ---------------- the bank ----------------
   function bank() {
@@ -71,9 +106,36 @@
     return state.bank;
   }
 
+  // ---------------- the attempt, remembered in this browser ----------------
+  // One record per application id. It is what makes a reload come back to the same
+  // questions and the same deadlines instead of a fresh clock.
+  var STORE = 'tb:' + state.applicant;
+  function loadRecord() {
+    try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { return null; }
+  }
+  function saveRecord(r) {
+    try { localStorage.setItem(STORE, JSON.stringify(r)); } catch (e) { /* private mode */ }
+  }
+  function record() {
+    return { v: 1, started: state.startedAt, qids: state.questions.map(function (q) { return q.id; }),
+             sched: state.sched, picks: state.picks, reloads: state.reloads, done: false,
+             name: state.name, email: state.email };
+  }
+
   // ---------------- gate ----------------
+  $('tWork').textContent = spoken(WORK_S);
+  $('tTeach').textContent = spoken(TEACH_S);
+  $('tTotal').textContent = Math.ceil(CAP_S / 60) + ' minutes';
   if (state.name) $('n').value = state.name;
   if (state.email) $('e').value = state.email;
+
+  if (!state.applicant) {
+    // Without the application id the upload comes back belonging to nobody, and the draw
+    // would be reseeded on every reload. The link in the email always carries it.
+    flag('gateflag', 'This link is missing your application id, so the page cannot tie your '
+      + 'recording to your application. Open the page from the link in the email we sent you.', true);
+    $('toPick').disabled = true;
+  }
 
   $('toPick').addEventListener('click', function () {
     var n = $('n').value.trim(), e = $('e').value.trim();
@@ -92,7 +154,7 @@
     var b = bank();
     if (!b) return;
     var subs = (b.groups['Level 2'] || []);
-    $('subs').innerHTML = subs.map(function (s, i) {
+    $('subs').innerHTML = subs.map(function (s) {
       return '<label class="pick"><input type="checkbox" class="sub" value="' + esc(s) + '">'
            + '<span><b>' + esc(s) + '</b></span></label>';
     }).join('');
@@ -146,9 +208,13 @@
   $('toSetup').addEventListener('click', function () {
     var pool = poolFor();
     if (!pool.total) {
-      return flag('pickflag', 'Pick at least one. If you do not want all of Level 2, tick the '
-        + 'individual subjects you are comfortable with instead.');
+      return flag('pickflag', 'Pick at least one. If you do not want all of Level 2 / Step 2, '
+        + 'tick the individual subjects you are comfortable with instead.');
     }
+    toSetup();
+  });
+
+  function toSetup() {
     show('setup');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       flag('setupflag', 'This browser cannot record. Use Chrome, Edge, Firefox or Safari on a laptop.', true);
@@ -158,12 +224,13 @@
         + 'a tablet. You can still record your camera and voice, but if you want to draw or show '
         + 'anything, stop and come back on a laptop.');
     }
-  });
+  }
 
   // ---------------- choosing the questions ----------------
   // Seeded on the application id, so the draw is stable for one applicant and different
   // between applicants. Plain randomness let somebody reload until they got a question they
-  // liked, which is the one form of gaming this page would otherwise invite.
+  // liked. The stored record above is what stops the same thing across reloads now, and the
+  // seed is the second lock under it.
   function seedFrom(str) {
     var h = 2166136261;
     for (var i = 0; i < str.length; i++) {
@@ -172,7 +239,7 @@
     }
     return h >>> 0;
   }
-  var rngState = seedFrom(state.applicant || String(Date.now()));
+  var rngState = 0;
   function rnd() {                       // mulberry32
     rngState = (rngState + 0x6D2B79F5) >>> 0;
     var t = rngState;
@@ -193,15 +260,7 @@
   function chooseQuestions() {
     var b = bank();
     if (!b) return [];
-    // If the invitation named the questions, use those. The bot picks the least used ones so
-    // two applicants in a row do not get the same pair.
-    if (state.assigned.length) {
-      var byId = {};
-      b.questions.forEach(function (q) { byId[q.id] = q; });
-      var named = state.assigned.map(function (i) { return byId[i]; }).filter(Boolean);
-      if (named.length >= N_QUESTIONS) return named.slice(0, N_QUESTIONS);
-    }
-    rngState = seedFrom(state.applicant || String(Date.now()));
+    rngState = seedFrom(state.applicant);
     var pool = poolFor(), out = [], used = [];
     // One from each level when they teach both, which is what the interview instructions
     // have always asked candidates to prepare.
@@ -286,57 +345,114 @@
     } catch (e) { /* the meter is a nicety, never a blocker */ }
   }
 
+  // ---------------- the schedule ----------------
+  // sched[i] = { w: when question i's read-and-work window ends, t: when its teaching window
+  // ends }, both absolute milliseconds. Question i+1 starts the instant sched[i].t passes.
+  function buildSchedule(from) {
+    var out = [];
+    for (var i = 0; i < state.questions.length; i++) {
+      var w = from + i * Q_MS + WORK_S * 1000;
+      out.push({ w: w, t: w + TEACH_S * 1000 });
+    }
+    return out;
+  }
+  function position(now) {
+    for (var i = 0; i < state.sched.length; i++) {
+      if (now < state.sched[i].w) return { at: i, phase: 'work' };
+      if (now < state.sched[i].t) return { at: i, phase: 'teach' };
+    }
+    return { at: state.sched.length, phase: 'over' };
+  }
+  // Pull everything from question `at` onward earlier by `ms`. The only edits the schedule
+  // ever takes are these, so a deadline can move earlier and never later.
+  function pullEarlier(at, ms) {
+    ms = Math.max(0, ms);      // a click that lands after the deadline passed shifts nothing
+    for (var i = at; i < state.sched.length; i++) {
+      state.sched[i].w -= ms;
+      state.sched[i].t -= ms;
+    }
+    saveRecord(record());
+  }
+
   // ---------------- rendering a question ----------------
   function render(q, idx) {
     var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
-      + '  ·  ' + esc(q.level) + '  ·  ' + esc(q.group) + '</div>'
+      + '  ·  ' + esc(examLabel(q.level)) + '  ·  ' + esc(q.group) + '</div>'
       + '<div class="stem">' + esc(q.stem) + '</div><ol class="opts">';
     q.options.forEach(function (o) { html += '<li>' + esc(o) + '</li>'; });
     html += '</ol>';
     $('qbox').innerHTML = html;
-    state.phase = 'teach';
-    state.phaseAt = Date.now();
-    $('reveal').classList.remove('hidden');
-    $('next').classList.add('hidden');
+    window.scrollTo(0, 0);
   }
 
-  function revealAnswer() {
-    var q = state.questions[state.at];
-    if (!q || state.phase !== 'teach') return;
-    // The card is theirs to type in by now, so the answer is grafted onto the DOM rather than
-    // re-rendered. Re-rendering would wipe whatever they highlighted or wrote while teaching.
-    var lis = $('qbox').querySelectorAll('ol.opts li');
-    [].forEach.call(lis, function (li) {
-      if (li.textContent.trim().replace(/\s+/g, ' ') === q.answer.trim().replace(/\s+/g, ' ')) {
-        li.classList.add('right');
-      }
-    });
-    var box = document.createElement('div');
-    box.className = 'reveal';
-    box.innerHTML = '<h3>The answer is ' + esc(q.answer) + '</h3>'
-      + '<p>' + esc(q.explanation) + '</p>'
-      + '<div class="prompt">Keep going, you are still recording. If that is where you landed, '
-      + 'say what you would check with the student to be sure they follow it. If it is not, say '
-      + 'so out loud and teach it from here. That is the part we are most interested in.</div>';
-    $('qbox').appendChild(box);
-    state.phase = 'after';
-    state.phaseAt = Date.now();
-    $('reveal').classList.add('hidden');
-    $('next').classList.remove('hidden');
-    $('next').textContent = (state.at + 1 < state.questions.length)
-      ? 'Next question' : 'Finish and send';
-    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-
-  $('reveal').addEventListener('click', revealAnswer);
-  $('next').addEventListener('click', function () {
-    if (state.at + 1 < state.questions.length) {
-      state.at += 1;
-      render(state.questions[state.at], state.at);
-      window.scrollTo(0, 0);
+  function paintPhase() {
+    var last = state.at + 1 >= state.questions.length;
+    var work = state.phase === 'work';
+    $('bar').classList.toggle('teach', !work);
+    $('ready2').classList.toggle('hidden', !work);
+    $('next').classList.toggle('hidden', work);
+    $('next').textContent = last ? 'Finish and send' : 'Next question';
+    $('phaseNote').classList.toggle('teach', !work);
+    if (work) {
+      $('phaseNote').textContent = 'Read it and work it. You are recording, so think out loud if '
+        + 'you like. Teaching time starts when the clock hits zero, or sooner if you press Start '
+        + 'teaching now.';
     } else {
-      finish();
+      $('phaseNote').textContent = 'Teach it, out loud, the way you would to a student who got it '
+        + 'wrong and does not know why. ' + (last
+          ? 'When the clock hits zero the recording ends and sends itself.'
+          : 'When the clock hits zero the next question replaces this one.');
     }
+  }
+
+  function tick() {
+    if (finishing || !state.sched.length) return;
+    var now = Date.now();
+    var pos = position(now);
+    if (pos.phase === 'over') { finish(); return; }
+    var changed = false;
+    if (pos.at !== state.at) {
+      state.at = pos.at;
+      render(state.questions[state.at], state.at);
+      changed = true;
+    }
+    if (pos.phase !== state.phase || changed) {
+      state.phase = pos.phase;
+      paintPhase();
+    }
+    var end = pos.phase === 'work' ? state.sched[pos.at].w : state.sched[pos.at].t;
+    var left = (end - now) / 1000;
+    $('clock').textContent = mmss(Math.ceil(left));
+    $('bar').classList.toggle('last', left <= 30);
+    $('cap').textContent = (pos.phase === 'work' ? 'to work it, then ' + spoken(TEACH_S) + ' to teach it'
+                                                  : 'left to teach it')
+      + '  ·  question ' + (pos.at + 1) + ' of ' + state.questions.length;
+    var total = Math.floor((now - state.startedAt) / 1000);
+    $('phase').textContent = 'Total ' + mmss(total) + ' of ' + mmss(CAP_S);
+  }
+
+  // Both buttons re-read the wall clock rather than trusting state.phase, because the page
+  // paints on a 250 ms tick and a click can land after a deadline passed but before the tick
+  // noticed. Trusting the painted phase there would compute a negative shift.
+  $('ready2').addEventListener('click', function () {
+    var now = Date.now(), pos = position(now);
+    if (pos.phase !== 'work' || pos.at !== state.at) { tick(); return; }
+    // Giving up the rest of the reading window. The teaching window keeps its full length
+    // and starts now, so everything after it moves earlier by exactly what they gave up.
+    pullEarlier(pos.at, state.sched[pos.at].w - now);
+    tick();
+  });
+  $('next').addEventListener('click', function () {
+    var now = Date.now(), pos = position(now);
+    if (pos.phase !== 'teach' || pos.at !== state.at) { tick(); return; }
+    pullEarlier(pos.at, state.sched[pos.at].t - now);
+    tick();
+  });
+
+  // A hidden tab gets its timers throttled, so the moment they come back the clock is
+  // re-read from the wall rather than waiting for the next throttled tick.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && state.tick) tick();
   });
 
   // ---------------- the doc tools ----------------
@@ -437,8 +553,41 @@
   }
 
   $('start').addEventListener('click', function () {
-    state.questions = chooseQuestions();
-    if (!state.questions.length) { alert('No questions matched what you picked. Go back and pick again.'); return; }
+    var b = bank() || { questions: [] };
+    if (state.resuming) {
+      // Same questions, same deadlines, whatever they did to the page in between.
+      var byId = {};
+      b.questions.forEach(function (q) { byId[q.id] = q; });
+      state.questions = state.resuming.qids.map(function (id) { return byId[id]; }).filter(Boolean);
+      state.sched = state.resuming.sched;
+      state.picks = state.resuming.picks || state.picks;
+      state.startedAt = state.resuming.started;
+      state.reloads = state.resuming.reloads;
+      state.name = state.resuming.name || state.name;
+      state.email = state.resuming.email || state.email;
+      if (state.questions.length !== state.resuming.qids.length) {
+        // The bank was rotated under them. Redraw from the seed rather than hand out a fresh
+        // clock, and keep their original deadlines.
+        state.questions = chooseQuestions();
+      }
+    } else {
+      state.questions = chooseQuestions();
+      if (!state.questions.length) { alert('No questions matched what you picked. Go back and pick again.'); return; }
+      state.startedAt = Date.now();
+      state.sched = buildSchedule(state.startedAt);
+      state.reloads = 0;
+    }
+    saveRecord(record());
+    // Read it straight back. A browser that is not keeping site data (a private window, or
+    // site data blocked) would hand out a fresh clock on every reload, so it does not get to
+    // start at all. Every normal browser window passes this.
+    var back = loadRecord();
+    if (!back || back.started !== state.startedAt) {
+      flag('setupflag', 'This browser is not keeping site data, which usually means a private '
+        + 'or incognito window. The clock cannot be trusted without it, so open the link from '
+        + 'your email in a normal window and start again.', true);
+      return;
+    }
 
     var mic = state.camStream.getAudioTracks();
     if (state.scrStream) {
@@ -449,24 +598,10 @@
       startRecorder('camera', state.camStream, 900000);
     }
 
-    state.startedAt = Date.now();
-    state.at = 0;
-    render(state.questions[0], 0);
+    state.at = -1; state.phase = '';
     show('record');
-
-    state.tick = setInterval(function () {
-      var ms = Date.now() - state.startedAt;          // wall clock, never a tick count, so
-      var s = Math.floor(ms / 1000);                  // throttling cannot distort it
-      $('clock').textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
-      var left = Math.max(0, CAP_MS - ms);
-      $('cap').textContent = left > 60000
-        ? 'Recording. ' + Math.ceil(left / 60000) + ' minutes left of the cap.'
-        : 'Recording. Under a minute left, start wrapping up.';
-      var ps = Math.floor((Date.now() - state.phaseAt) / 1000);
-      $('phase').textContent = (state.phase === 'teach' ? 'Teaching this one: ' : 'Since the answer: ')
-        + Math.floor(ps / 60) + ':' + ('0' + (ps % 60)).slice(-2);
-      if (ms >= CAP_MS) finish();
-    }, 500);
+    tick();
+    state.tick = setInterval(tick, 250);   // wall clock inside, never a tick count
   });
 
   $('stop').addEventListener('click', function () {
@@ -485,6 +620,7 @@
     finishing = true;
     clearInterval(state.tick);
     clearInterval(state.level);
+    var r = record(); r.done = 'recorded'; saveRecord(r);
     var pending = state.recs.length;
     if (!pending) return;
     state.recs.forEach(function (rec) {
@@ -507,14 +643,16 @@
 
   // ---------------- upload ----------------
   function contextString(role) {
-    var esc2 = function (v) { return String(v).replace(/([=|])/g, '\\$1'); };
+    var esc2 = function (v) { return String(v).replace(/([\\=|])/g, '\\$1'); };
     var picks = [];
-    if (state.picks.l1) picks.push('Level 1');
-    if (state.picks.l2all) picks.push('Level 2 all');
+    if (state.picks.l1) picks.push('Level 1 / Step 1');
+    if (state.picks.l2all) picks.push('Level 2 / Step 2, all of it');
     if (state.picks.subs.length) picks.push(state.picks.subs.join(' and '));
     return ['name=' + esc2(state.name), 'email=' + esc2(state.email),
             'applicant=' + esc2(state.applicant || 'none'), 'role=' + role,
             'minutes=' + Math.round((Date.now() - state.startedAt) / 60000),
+            'started=' + new Date(state.startedAt).toISOString(),
+            'cap=' + CAP_S, 'reloads=' + state.reloads,
             'teaches=' + esc2(picks.join(', ') || 'not stated'),
             'questions=' + esc2(state.questions.map(function (q) { return q.id; }).join(' '))
            ].join('|');
@@ -575,7 +713,7 @@
     function bytes(n) {
       sent += n;
       var pct = Math.min(99, Math.round((sent / total) * 100));
-      $('bar').style.width = pct + '%';
+      $('bar2').style.width = pct + '%';
       $('upPct').textContent = pct + '%';
     }
     var chain = Promise.resolve();
@@ -583,7 +721,9 @@
       chain = chain.then(function () { return uploadOne(item, bytes); });
     });
     chain.then(function () {
-      $('bar').style.width = '100%'; $('upPct').textContent = '100%'; show('done');
+      $('bar2').style.width = '100%'; $('upPct').textContent = '100%';
+      var r = record(); r.done = 'sent'; saveRecord(r);
+      show('done');
     }).catch(function (err) {
       flag('upflag', 'The upload did not finish (' + String(err.message || err).slice(0, 160)
         + '). Your recording is still here in the page, so try again. If it will not go, download '
@@ -602,4 +742,77 @@
       document.body.appendChild(a); a.click(); a.remove();
     });
   });
+
+  // ---------------- coming back to a started attempt ----------------
+  function closed(title, note) {
+    $('againTitle').textContent = title;
+    $('againNote').textContent = note;
+    show('again');
+  }
+  (function resumeIfStarted() {
+    if (!state.applicant) return;
+    var r = loadRecord();
+    if (!r || !r.sched || !r.sched.length) return;
+    if (r.done === 'sent') {
+      return closed('You already sent your teaching sample.',
+        'It reached us and it is attached to your application. It is one take, so there is '
+        + 'nothing more to do here. You will hear back either way.');
+    }
+    if (r.done === 'recorded') {
+      return closed('Your recording did not finish sending.',
+        'The page was closed while your recording was on its way, and the recording went with '
+        + 'it. Reply to the email that sent you here and say what happened.');
+    }
+    var now = Date.now();
+    var last = r.sched[r.sched.length - 1].t;
+    if (now >= last) {
+      r.done = 'expired'; saveRecord(r);
+      return closed('Your time ran out.',
+        'You started this at ' + new Date(r.started).toLocaleTimeString() + ' and the page was '
+        + 'closed before anything was sent. The clock does not stop for that, so this attempt '
+        + 'is over. Reply to the email that sent you here and say what happened.');
+    }
+    if (r.done === 'expired') {
+      // Cannot happen with a sane clock, but a machine whose clock jumped backwards could
+      // get here. Treat it as over rather than hand a window back.
+      return closed('Your time ran out.',
+        'This attempt is over. Reply to the email that sent you here and say what happened.');
+    }
+    r.reloads = (r.reloads || 0) + 1;
+    saveRecord(r);
+    state.resuming = r;
+    state.reloads = r.reloads;
+    state.sched = r.sched;
+    // Describe where the clock is right now. It keeps moving while they read this.
+    var pos = position(now);
+    var end = pos.phase === 'work' ? r.sched[pos.at].w : r.sched[pos.at].t;
+    $('resumeNote').textContent = 'You pressed Start at ' + new Date(r.started).toLocaleTimeString()
+      + ' and this browser remembers it. You are on question ' + (pos.at + 1) + ' of '
+      + r.qids.length + ', ' + (pos.phase === 'work' ? 'still in the reading window' : 'in the teaching window')
+      + ', with this much left on it:';
+    var rc = setInterval(function () {
+      var n2 = Date.now(), p2 = position(n2);
+      if (p2.phase === 'over') {
+        clearInterval(rc);
+        r.done = 'expired'; saveRecord(r);
+        return closed('Your time ran out.', 'The clock reached the end while this page was open. '
+          + 'Reply to the email that sent you here and say what happened.');
+      }
+      var e2 = p2.phase === 'work' ? r.sched[p2.at].w : r.sched[p2.at].t;
+      $('resumeClock').textContent = mmss(Math.ceil((e2 - n2) / 1000));
+    }, 250);
+    $('resumeClock').textContent = mmss(Math.ceil((end - now) / 1000));
+    $('resumeGo').addEventListener('click', function () {
+      clearInterval(rc);
+      if (position(Date.now()).phase === 'over') {
+        r.done = 'expired'; saveRecord(r);
+        return closed('Your time ran out.', 'The clock reached the end before you pressed Continue. '
+          + 'Reply to the email that sent you here and say what happened.');
+      }
+      toSetup();
+      flag('setupflag', 'Your clock is still running while you do this. Camera and microphone, '
+        + 'then the screen, then Start.');
+    });
+    show('resume');
+  })();
 })();

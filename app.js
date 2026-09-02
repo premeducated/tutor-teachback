@@ -72,11 +72,11 @@
     name: params.get('n') || '',
     email: params.get('e') || '',
     camStream: null, scrStream: null,
-    recs: [], parts: {}, blobs: [],
+    recs: [], seg: null,
     startedAt: 0, tick: null, level: null,
     bank: null, questions: [], at: -1, phase: '', heard: false,
     sched: [], reloads: 0, resuming: null,
-    away: [], surface: '', chat: [],
+    away: [], surface: '', chat: [], answers: {},
     picks: { l1: false, l2all: false, subs: [], omm: false, bio: false }
   };
 
@@ -89,6 +89,7 @@
     ['gate', 'resume', 'again', 'pick', 'practice', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
       $(s).classList.toggle('hidden', s !== which);
     });
+    document.body.classList.toggle('recording', which === 'record');
     var step = { gate: 0, resume: 0, again: 5, pick: 1, practice: 2, setup: 3, record: 4, upload: 5, done: 5 }[which];
     [].forEach.call($('steps').children, function (d, i) { d.classList.toggle('on', i <= step); });
     window.scrollTo(0, 0);
@@ -133,7 +134,8 @@
   function record() {
     return { v: 1, started: state.startedAt, qids: state.questions.map(function (q) { return q.id; }),
              sched: state.sched, picks: state.picks, reloads: state.reloads, done: false,
-             name: state.name, email: state.email, away: state.away, chat: state.chat, seen: Date.now() };
+             name: state.name, email: state.email, away: state.away, chat: state.chat,
+             answers: state.answers, seen: Date.now() };
   }
 
   // ---------------- gate ----------------
@@ -241,8 +243,7 @@
     var pool = poolFor();
     if (!pool.total) {
       return flag('pickflag', 'Pick at least one. If you do not want all of Level 2 / Step 2, '
-        + 'tick the shelf subjects you are comfortable with instead. OMM and biostats are '
-        + 'under On every exam.');
+        + 'tick the shelf subjects you are comfortable with instead.');
     }
     show('practice');
   });
@@ -340,13 +341,24 @@
     }).catch(function (err) { flag('setupflag', permMessage(err, 'camera and microphone'), true); });
   });
 
+  // The screen is captured no wider than 1600 px. Lucas's own run captured his Retina screen
+  // at 2880 by 1800, and the encoder spent its whole bitrate on pixels nobody needs: a page of
+  // text reads fine at 1600 wide. A browser that cannot scale is asked again without the cap.
+  function askDisplay(capped) {
+    var video = { displaySurface: 'monitor', frameRate: { ideal: 15, max: 20 } };
+    if (capped) { video.width = { max: 1600 }; video.height = { max: 1000 }; }
+    return navigator.mediaDevices.getDisplayMedia({ video: video, audio: false }).catch(function (err) {
+      if (capped && err && err.name === 'OverconstrainedError') return askDisplay(false);
+      throw err;
+    });
+  }
   $('askScreen').addEventListener('click', function () {
-    navigator.mediaDevices.getDisplayMedia({
-      // displaySurface is a hint to open the picker on the whole-screen pane. Browsers that
-      // honour it help, browsers that ignore it are checked after the fact below.
-      video: { displaySurface: 'monitor', frameRate: { ideal: 15, max: 20 } }, audio: false
-    }).then(function (s) {
+    // displaySurface is a hint to open the picker on the whole-screen pane. Browsers that
+    // honour it help, browsers that ignore it are checked after the fact below.
+    askDisplay(true).then(function (s) {
       var track = s.getVideoTracks()[0];
+      // Text, not motion: the encoder keeps letters sharp and drops frames instead.
+      try { if (track) track.contentHint = 'text'; } catch (e) {}
       var settings = (track && track.getSettings) ? (track.getSettings() || {}) : {};
       state.surface = settings.displaySurface || 'unknown';
       if (settings.displaySurface && settings.displaySurface !== 'monitor') {
@@ -366,7 +378,8 @@
       $('askScreen').classList.add('done');
       stepNote(3);
       s.getVideoTracks()[0].addEventListener('ended', function () {
-        if (state.recs.length) finish();
+        // They stopped sharing. The attempt ends and whatever is on tape goes up.
+        if (state.tick && !finishing) finish();
       });
       unflag('setupflag');
       readyCheck();
@@ -493,9 +506,17 @@
     var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
       + '  ·  ' + esc(examLabel(q.level)) + '  ·  ' + esc(q.group) + '</div>'
       + '<div class="stem">' + esc(q.stem) + '</div><ol class="opts">';
-    q.options.forEach(function (o) { html += '<li>' + XO + esc(o) + '</li>'; });
+    q.options.forEach(function (o) { html += '<li>' + XO + LOCK + esc(o) + '</li>'; });
     html += '</ol>';
     $('qbox').innerHTML = html;
+    // Back after a reload: the answer they locked in comes back with the question.
+    var letter = state.answers[q.id] || '';
+    var picked = letter ? LETTERS.indexOf(letter) : -1;    // indexOf('') is 0, not -1
+    if (picked >= 0) markPicked($('qbox').querySelectorAll('ol.opts li')[picked]);
+    // A new question is a clean page (Lucas, 2026-09-02: "moving on to the next question
+    // should clear the drawings"). The notes box goes with it: they were about the last one.
+    eraseInk();
+    $('scratch').innerHTML = '';
     window.scrollTo(0, 0);
   }
 
@@ -514,16 +535,12 @@
     $('next').classList.toggle('ghost', !last);
     $('phaseNote').classList.toggle('teach', !work);
     if (work) {
-      $('phaseNote').textContent = 'Read it and work it. You are recording, so think out loud if '
-        + 'you like. Teaching time starts when the clock hits zero, or sooner if you press Start '
-        + 'teaching now.';
+      $('phaseNote').textContent = 'Read it and work it. Lock in your answer. Teaching starts when '
+        + 'the clock hits zero.';
       student.stop();
     } else {
-      $('phaseNote').textContent = 'Teach it, out loud. Your student got it wrong and is on the '
-        + 'page. Ask them what they picked and why, and lead them to it. They answer what you ask '
-        + 'and stay quiet while you explain. ' + (last
-          ? 'When the clock hits zero the recording ends and sends itself. Finish and send does the same sooner.'
-          : 'When the clock hits zero the next question replaces this one. Next question does the same sooner.');
+      $('phaseNote').textContent = 'Teach it out loud. Your student got it wrong. Ask them what they '
+        + 'picked and why.';
       student.begin(state.questions[state.at], state.at + 1, state.startedAt);
     }
   }
@@ -535,8 +552,12 @@
     if (pos.phase === 'over' || !state.questions[pos.at]) { finish(); return; }
     var changed = false;
     if (pos.at !== state.at) {
+      // The question that just ended goes up now, in the background, and the new one starts
+      // its own tapes. The recorders overlap for a moment, which is allowed.
+      if (state.at >= 0) endSegment(null);
       state.at = pos.at;
       render(state.questions[state.at], state.at);
+      startSegment(state.at);
       changed = true;
     }
     if (pos.phase !== state.phase || changed) {
@@ -553,6 +574,7 @@
       + '  ·  question ' + (pos.at + 1) + ' of ' + state.questions.length;
     var total = Math.floor((now - state.startedAt) / 1000);
     $('phase').textContent = 'Total ' + mmss(total) + ' of ' + mmss(capS());
+    paintUpstat();
     if (now - lastStamp > 5000) { lastStamp = now; saveRecord(record()); }
   }
   var lastStamp = 0;
@@ -645,27 +667,80 @@
   // Both toolbars, the practice one and the real one, are wired the same way. execCommand
   // acts on the live selection, so it does not care which card the selection is in.
   function all(sel) { return [].slice.call(document.querySelectorAll(sel)); }
-  all('[data-tool=bold]').forEach(function (b) { keepSelection(b, function () { document.execCommand('bold'); }); });
-  all('[data-tool=mark]').forEach(function (b) { keepSelection(b, function () {
+  // A press you can see (Lucas, 2026-09-02: "there's no confirmation that i've clicked those
+  // buttons"). The text tools act on the selection, so with nothing selected they used to do
+  // nothing and say nothing. Now a press flashes the button, and a press with nothing selected
+  // says what to do, in a hint under the toolbar that never changes the toolbar's height.
+  function hint(btn, msg) {
+    var bar = btn.closest ? btn.closest('[data-tools]') : null;
+    var el = bar && bar.querySelector('[data-hint]');
+    if (!el) return;
+    el.textContent = msg;
+    clearTimeout(el._t); el._t = setTimeout(function () { el.textContent = ''; }, 2600);
+  }
+  function flash(btn) {
+    btn.classList.add('flash');
+    setTimeout(function () { btn.classList.remove('flash'); }, 350);
+  }
+  function selectionTool(sel, name, fn) {
+    all(sel).forEach(function (b) { keepSelection(b, function () {
+      var s = window.getSelection();
+      if (!s || s.isCollapsed) { hint(b, 'Select some words first, then press ' + name + '.'); return; }
+      fn(); flash(b);
+    }); });
+  }
+  selectionTool('[data-tool=bold]', 'B', function () { document.execCommand('bold'); });
+  selectionTool('[data-tool=mark]', 'Highlight', function () {
     // styleWithCSS matters: without it some browsers emit <font> and the highlight is lost.
     try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
     document.execCommand('hiliteColor', false, HILITE);
-  }); });
+  });
   // Strike, Lucas 2026-09-01 night: "i would also like a strikethrough feature for stem text
   // and answer choices." Two ways in: select anything and press Strike, or click the small
   // cross beside an answer choice to cross the whole choice out, the way the exam software
   // does it. The cross is not editable, so typing in the question never eats it.
-  all('[data-tool=strike]').forEach(function (b) { keepSelection(b, function () { document.execCommand('strikeThrough'); }); });
-  all('[data-tool=clear]').forEach(function (b) { keepSelection(b, function () { document.execCommand('removeFormat'); }); });
+  selectionTool('[data-tool=strike]', 'Strike', function () { document.execCommand('strikeThrough'); });
+  selectionTool('[data-tool=clear]', 'Clear', function () { document.execCommand('removeFormat'); });
   var XO = '<span class="xo" contenteditable="false" title="Cross this choice out">\u2715</span>';
+  // Lock in, Lucas 2026-09-02: "are we requiring them to lock in an answer choice somehow?
+  // because currently, there's no way to do that." One per question, it rides up with the
+  // tapes as the letter and the option text, and the bot checks it against the key. It is not
+  // a gate: the clock moves on either way, and a question with no lock says so in Slack.
+  var LOCK = '<span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>';
+  var LETTERS = 'ABCDEFGHIJ';
+  function markPicked(li) {
+    if (!li) return;
+    li.classList.add('picked');
+    var k = li.querySelector('.lock'); if (k) k.textContent = 'Your answer';
+  }
   document.addEventListener('mousedown', function (e) {
-    if (e.target.classList && e.target.classList.contains('xo')) e.preventDefault();
+    var c = e.target.classList;
+    if (c && (c.contains('xo') || c.contains('lock'))) e.preventDefault();
   });
   document.addEventListener('click', function (e) {
     var x = e.target;
-    if (!x.classList || !x.classList.contains('xo')) return;
+    if (!x.classList) return;
+    if (x.classList.contains('xo')) {
+      e.preventDefault();
+      x.parentNode.classList.toggle('struck');
+      return;
+    }
+    if (!x.classList.contains('lock')) return;
     e.preventDefault();
-    x.parentNode.classList.toggle('struck');
+    var li = x.parentNode, ol = li.parentNode;
+    var lis = [].slice.call(ol.children), idx = lis.indexOf(li);
+    var already = li.classList.contains('picked');
+    lis.forEach(function (l) {
+      l.classList.remove('picked');
+      var k = l.querySelector('.lock'); if (k) k.textContent = 'Lock in';
+    });
+    if (!already) markPicked(li);
+    var real = $('qbox').contains(li) && state.questions[state.at];
+    if (real) {
+      var qid = state.questions[state.at].id;
+      if (already) delete state.answers[qid]; else state.answers[qid] = LETTERS[idx] || '';
+      saveRecord(record());
+    }
   });
 
   // ---------------- drawing ----------------
@@ -701,7 +776,7 @@
     ink.classList.toggle('live', penOn);
     all('[data-tool=pen]').forEach(function (b) {
       b.classList.toggle('on', penOn);
-      b.textContent = penOn ? 'Drawing, click to stop' : 'Draw on the screen';
+      b.textContent = penOn ? 'Stop drawing' : 'Draw anywhere';
     });
   }
   function eraseInk() { strokes = []; cur = null; redraw(); }
@@ -730,6 +805,30 @@
       if (cur) { strokes.push(cur); cur = null; redraw(); }
     });
   });
+  // The whiteboard under the question draws without the pen being switched on. Lucas,
+  // 2026-09-02: he did not know he could draw anywhere, "maybe give them a little whiteboard
+  // underneath the question, so it's a little more obvious that they can draw and they have a
+  // dedicated space for it." Same strokes, same canvas, same colours. When the pen IS on the
+  // canvas sits over the board and takes the events itself, so nothing draws twice.
+  all('[data-board]').forEach(function (board) {
+    board.addEventListener('pointerdown', function (e) {
+      if (penOn || e.button) return;
+      e.preventDefault();
+      try { board.setPointerCapture(e.pointerId); } catch (x) {}
+      cur = { c: penColor, pts: [{ x: e.clientX, y: e.clientY + window.scrollY }] };
+      redraw();
+    });
+    board.addEventListener('pointermove', function (e) {
+      if (!cur || penOn) return;
+      cur.pts.push({ x: e.clientX, y: e.clientY + window.scrollY });
+      redraw();
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) {
+      board.addEventListener(ev, function () {
+        if (cur && !penOn) { strokes.push(cur); cur = null; redraw(); }
+      });
+    });
+  });
 
   // ---------------- the student ----------------
   // Lucas 2026-09-01 late night, his go on the browser-voice student. What he is after, in
@@ -756,6 +855,14 @@
     var q = null, num = 0, t0 = 0, on = false, gen = 0;
     var rec = null, wantListen = false, speaking = false, typedOnly = !SR;
     var queue = [], busy = false;
+    // Nothing goes to the student until the tutor has been quiet this long. Chrome hands over
+    // a "final" stretch at every one-second pause, so on Lucas's own run (2026-09-02) "something
+    // I think is important would be the scratching" and "and the high pitched sound" went up
+    // two seconds apart as two turns, the student answered the friction rub twice, and it
+    // talked over him mid-sentence. His words: "it needs to give a little more time for people
+    // that speak slower like me." Fragments now merge until the pause is real.
+    var QUIET_MS = 2500;
+    var pending = '', lastVoice = 0, quietT = null;
 
     function setState(s, cls) { stateEl.textContent = s; stateEl.className = 'st-state ' + (cls || ''); }
     function bubble(who, text) {
@@ -797,12 +904,15 @@
       if (rec || speaking) return;
       try {
         var r = new SR();
-        r.continuous = true; r.interimResults = false; r.lang = 'en-US';
+        // Interim results are how the page knows the tutor is still talking: every one of
+        // them, final or not, pushes the quiet timer back.
+        r.continuous = true; r.interimResults = true; r.lang = 'en-US';
         r.onresult = function (ev) {
+          lastVoice = Date.now();
           for (var i = ev.resultIndex; i < ev.results.length; i++) {
             if (ev.results[i].isFinal) {
               var text = (ev.results[i][0].transcript || '').trim();
-              if (text) heard(text, false);
+              if (text) pending = (pending ? pending + ' ' : '') + text;
             }
           }
         };
@@ -871,12 +981,41 @@
     }
 
     // ---- a stretch of the candidate's speech ----
+    function quiet() { return typedOnly || !lastVoice || Date.now() - lastVoice >= QUIET_MS; }
+    // Runs four times a second while the window is open. A finished stretch waits here until
+    // the tutor has been quiet long enough, then goes to the student as one piece.
+    function checkQuiet() {
+      if (!on) return;
+      if (pending && quiet()) { var t = pending; pending = ''; heard(t, false); }
+      if (queue.length && !busy && quiet()) pump();
+    }
     function heard(text, typed) {
       if (!on) return;
       bubble('you', text);
       var t = push('you', text, { typed: !!typed });
       queue.push({ turn: t, text: text });
-      pump();
+      if (typed) pump();
+    }
+    // The student saying the same thing twice, which Lucas heard on the practice question
+    // ("transferrin is basically TIBC", twice over). If the new line is mostly the words of the
+    // last one, it stays unsaid.
+    function words(t) {
+      var seen = {}, out = [];
+      String(t).toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).forEach(function (w) {
+        if (w && !seen[w]) { seen[w] = 1; out.push(w); }
+      });
+      return out;
+    }
+    function letters(t) { return (String(t).match(/\b[A-Ea-e](?=[\s?.,!]|$)/g) || []).join('').toUpperCase(); }
+    function sameAsLast(text) {
+      var prev = mine().filter(function (t) { return t.who === 'student'; }).pop();
+      if (!prev) return false;
+      var a = words(prev.text), b = words(text), common = 0;
+      if (a.length < 4 || b.length < 4) return false;
+      // A line that names a different answer letter is a new thought, however similar the rest.
+      if (letters(prev.text) !== letters(text)) return false;
+      b.forEach(function (w) { if (a.indexOf(w) >= 0) common++; });
+      return common / Math.max(a.length, b.length) >= 0.72;
     }
     function pump() {
       if (busy || !queue.length || !on) return;
@@ -885,14 +1024,24 @@
       // Everything said while the last answer was in flight goes up as one stretch.
       var items = queue.splice(0, queue.length);
       var seg = items.map(function (i) { return i.text; }).join(' ');
+      // The function keeps the first 1500 characters, and a tutor who talked for minutes
+      // before pausing asked their question at the END of that. Send the tail.
+      if (seg.length > 1400) seg = seg.slice(-1400);
       var hist = mine().map(function (t) { return { who: t.who, text: t.text }; });
       hist = hist.slice(0, Math.max(0, hist.length - items.length)).slice(-40);
+      var sentAt = Date.now();
       setState('thinking', 'busy');
       call({ seg: seg, history: hist }).then(function (r) {
         if (g !== gen) return;
+        // The tutor went on talking while this was in flight, so it answers half a thought.
+        // Drop it, put the stretch back, and the whole thought goes up at the next real pause.
+        if (!typedOnly && (queue.length || pending || (lastVoice > sentAt && !quiet()))) {
+          queue = items.concat(queue);
+          return;
+        }
         items.forEach(function (i) { i.turn.asked = !!r.asked; i.turn.addressed = !!r.addressed; });
         if (state.tick) saveRecord(record());
-        if (r.reply) {
+        if (r.reply && !sameAsLast(r.reply)) {
           bubble('student', r.reply);
           push('student', r.reply);
           return new Promise(function (res) { speak(r.reply, res); });
@@ -904,9 +1053,9 @@
       }).then(function () {
         if (g !== gen) return;
         busy = false;
-        if (queue.length) { pump(); return; }
         if (typedOnly) setState('type below', 'typed');
         else if (wantListen) { setState('listening', 'live'); startListening(); }
+        if (queue.length && quiet()) pump();      // otherwise checkQuiet sends it at the pause
       });
     }
 
@@ -918,6 +1067,8 @@
       gen += 1;
       var g = gen;
       q = question; num = n; t0 = startedAt || Date.now(); on = true;
+      pending = ''; lastVoice = 0;
+      clearInterval(quietT); quietT = setInterval(checkQuiet, 250);
       log.innerHTML = ''; note.textContent = '';
       root.classList.remove('hidden');
       typeWrap.classList.toggle('hidden', !typedOnly);
@@ -951,7 +1102,11 @@
     }
     function stop() {
       gen += 1;
+      // A stretch that was still waiting for its quiet window is theirs all the same: it goes
+      // into the transcript, unsent and unjudged, rather than vanishing (independent review).
+      if (on && q && pending) { bubble('you', pending); push('you', pending, { typed: false, unsent: true }); }
       on = false; q = null; queue = []; busy = false;
+      pending = ''; clearInterval(quietT); quietT = null;
       stopListening();
       if (guard) { clearTimeout(guard); guard = null; }
       if (TTS) { try { TTS.cancel(); } catch (e) {} }
@@ -983,7 +1138,10 @@
     var box = $('pqbox');
     var stem = box.querySelector('.stem').textContent.replace(/\s+/g, ' ').trim();
     var options = [].map.call(box.querySelectorAll('ol.opts li'), function (li) {
-      return li.textContent.replace(/^\s*✕\s*/, '').replace(/\s+/g, ' ').trim();
+      // The cross and the Lock in pill are inside the choice. Read the choice without them.
+      var c = li.cloneNode(true);
+      [].forEach.call(c.querySelectorAll('.xo, .lock'), function (x) { x.parentNode.removeChild(x); });
+      return c.textContent.replace(/\s+/g, ' ').trim();
     });
     practiceTurns.length = 0;
     pStudent.begin({ id: 'practice', stem: stem, options: options }, 0, Date.now());
@@ -999,6 +1157,14 @@
     return '';
   }
 
+  // One file per question per camera, not one file for the whole attempt. Lucas's own run on
+  // 2026-09-02: six minutes made a 60 MB screen file, so four full questions would pass 400 MB,
+  // and this Cloudinary plan refuses any video over 100 MB. And a page closed early used to
+  // lose everything. Now each question's tapes go up the moment it ends, in the background,
+  // while the next one runs. The biggest possible file is one 9.5 minute question at the
+  // screen bitrate below, about 80 MB with the voice track.
+  var SCREEN_BPS = 1000000, CAMERA_BPS = 300000;
+
   function startRecorder(key, stream, videoBps) {
     var mime = pickMime(['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus',
                          'video/webm', 'video/mp4']);
@@ -1007,13 +1173,54 @@
     var rec;
     try { rec = new MediaRecorder(stream, opts); }
     catch (e) { rec = new MediaRecorder(stream); }
-    state.parts[key] = [];
-    rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) state.parts[key].push(ev.data); };
+    // The parts live on the recorder, not in a shared slot: the next question's recorder for
+    // the same camera starts before this one has flushed its last chunk.
+    rec.__parts = [];
+    rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) rec.__parts.push(ev.data); };
     rec.__key = key;
     rec.__mime = rec.mimeType || mime || 'video/webm';
     rec.start(4000);
     state.recs.push(rec);
     return rec;
+  }
+  function startSegment(at) {
+    if (!state.scrStream || !state.camStream || !state.questions[at]) return;
+    var mic = state.camStream.getAudioTracks();
+    var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
+    state.seg = { at: at, qid: state.questions[at].id, t0: Date.now() };
+    startRecorder('screen', screenPlusVoice, SCREEN_BPS);
+    startRecorder('camera', state.camStream, CAMERA_BPS);
+  }
+  // Stop the running tapes, hand each one to the sender with the question's transcript, then
+  // call done. The next question's recorders may already be running on the same streams.
+  var flushing = 0;      // recorders stopped but not yet handed to the sender
+  function endSegment(done) {
+    var recs = state.recs, seg = state.seg;
+    state.recs = []; state.seg = null;
+    if (!recs.length || !seg) { if (done) done(); return; }
+    var pending = recs.length;
+    flushing += pending;
+    var minutes = Math.max(1, Math.round((Date.now() - seg.t0) / 60000));
+    recs.forEach(function (rec) {
+      var collected = false;
+      function collect() {
+        if (collected) return;
+        collected = true;
+        flushing -= 1;
+        if (rec.__parts.length) {
+          enqueue({ role: rec.__key, q: seg.at, qid: seg.qid, minutes: minutes,
+                    blob: new Blob(rec.__parts, { type: rec.__mime }) });
+        }
+        rec.__parts = [];
+        if (--pending === 0) {
+          enqueue({ role: 'transcript', q: seg.at, qid: seg.qid, minutes: minutes,
+                    blob: new Blob([JSON.stringify(transcript(seg.at, seg.qid))], { type: 'application/json' }) });
+          if (done) done();
+        }
+      }
+      rec.onstop = collect;
+      try { rec.stop(); } catch (e) { collect(); }
+    });
   }
 
   $('start').addEventListener('click', function () {
@@ -1063,6 +1270,7 @@
       state.email = state.resuming.email || state.email;
       state.away = state.resuming.away || [];
       state.chat = state.resuming.chat || [];
+      state.answers = state.resuming.answers || {};
       if (state.resuming.seen) noteAway(state.resuming.seen, Date.now(), 'c');
     } else {
       state.questions = chooseQuestions();
@@ -1083,11 +1291,8 @@
       return;
     }
 
-    var mic = state.camStream.getAudioTracks();
-    var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
-    startRecorder('screen', screenPlusVoice, 1200000);
-    startRecorder('camera', state.camStream, 350000);
-
+    // The tapes start inside tick(), with the first question, so a resume records under the
+    // question the clock is actually on.
     state.at = -1; state.phase = '';
     show('record');
     tick();
@@ -1095,7 +1300,8 @@
   });
 
   window.addEventListener('beforeunload', function (e) {
-    if (state.recs.length && !state.blobs.length) { e.preventDefault(); e.returnValue = ''; }
+    var unsent = queue.some(function (i) { return i.role !== 'transcript' && i.status !== 'sent'; });
+    if (state.recs.length || flushing > 0 || unsent) { e.preventDefault(); e.returnValue = ''; }
   });
 
   var finishing = false;
@@ -1106,28 +1312,18 @@
     clearInterval(state.level);
     student.stop();
     var r = record(); r.done = 'recorded'; saveRecord(r);
-    var pending = state.recs.length;
-    if (!pending) return;
-    state.recs.forEach(function (rec) {
-      rec.onstop = function () {
-        var parts = state.parts[rec.__key] || [];
-        if (parts.length) {
-          state.blobs.push({ role: rec.__key, blob: new Blob(parts, { type: rec.__mime }) });
-        }
-        if (--pending === 0) {
-          [state.camStream, state.scrStream].forEach(function (s) {
-            if (s) s.getTracks().forEach(function (t) { t.stop(); });
-          });
-          show('upload');
-          sendAll();
-        }
-      };
-      try { rec.stop(); } catch (e) { if (--pending === 0) { show('upload'); sendAll(); } }
+    endSegment(function () {
+      [state.camStream, state.scrStream].forEach(function (s) {
+        if (s) s.getTracks().forEach(function (t) { t.stop(); });
+      });
+      $('upstat').classList.add('hidden');
+      show('upload');
+      sendAll();
     });
   }
 
   // ---------------- upload ----------------
-  function contextString(role) {
+  function contextString(item) {
     var esc2 = function (v) { return String(v).replace(/([\\=|])/g, '\\$1'); };
     var picks = [];
     if (state.picks.l1) picks.push('Level 1 / Step 1');
@@ -1135,9 +1331,16 @@
     if (state.picks.subs.length) picks.push(state.picks.subs.join(' and '));
     if (state.picks.omm) picks.push('OMM');
     if (state.picks.bio) picks.push('Biostats');
+    var q = state.questions.filter(function (x) { return x.id === item.qid; })[0];
+    var letter = state.answers[item.qid] || '';
+    var atext = (letter && q) ? (q.options[LETTERS.indexOf(letter)] || '') : '';
     return ['name=' + esc2(state.name), 'email=' + esc2(state.email),
-            'applicant=' + esc2(state.applicant || 'none'), 'role=' + role,
-            'minutes=' + Math.round((Date.now() - state.startedAt) / 60000),
+            'applicant=' + esc2(state.applicant || 'none'), 'role=' + item.role,
+            'q=' + (item.q + 1), 'of=' + state.questions.length, 'qid=' + esc2(item.qid),
+            'minutes=' + item.minutes,
+            'elapsed=' + Math.round((Date.now() - state.startedAt) / 60000),
+            'answer=' + (letter || '-'), 'answertext=' + esc2(atext).slice(0, 200),
+            'answers=' + esc2(state.questions.map(function (x) { return state.answers[x.id] || '-'; }).join(' ')),
             'started=' + new Date(state.startedAt).toISOString(),
             'cap=' + capS(), 'reloads=' + state.reloads,
             'surface=' + (state.surface || 'unknown'),
@@ -1151,14 +1354,14 @@
            ].join('|');
   }
 
-  function putChunk(blob, role, start, end, total, uniq) {
+  function putChunk(item, start, end, total, uniq) {
     var fd = new FormData();
-    fd.append('file', blob.slice(start, end), role + '.webm');
+    fd.append('file', item.blob.slice(start, end), item.role + '-q' + (item.q + 1) + '.webm');
     fd.append('upload_preset', PRESET);
     // No tags field here on purpose. An unsigned upload cannot add its own tags, the preset's
     // tutor-teachback tag is applied server side, and everything that identifies the applicant
     // rides in context, which unsigned uploads DO keep. Verified against the live account.
-    fd.append('context', contextString(role));
+    fd.append('context', contextString(item));
     return fetch(ENDPOINT, {
       method: 'POST', body: fd,
       headers: { 'X-Unique-Upload-Id': uniq,
@@ -1171,22 +1374,23 @@
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-  // What the bot reads to count the candidate's questions to the student. Every stretch the
-  // candidate said (with the student's verdict on whether it asked or addressed them) and
-  // every reply, with seconds since Start and the question it happened on. Practice turns are
+  // What the bot reads to count the candidate's questions to the student, one file per
+  // question: every stretch the candidate said on it (with the student's verdict on whether
+  // it asked or addressed them) and every reply, with seconds since Start. Practice turns are
   // never in here, only the recorded questions.
-  function transcript() {
-    return { v: 1, applicant: state.applicant || 'none', name: state.name,
+  function transcript(at, qid) {
+    return { v: 2, applicant: state.applicant || 'none', name: state.name,
              started: new Date(state.startedAt).toISOString(), work_s: WORK_S, teach_s: TEACH_S,
              speech: SR ? 'browser' : 'typed',
+             q: at + 1, of: state.questions.length, qid: qid, answer: state.answers[qid] || '',
              questions: state.questions.map(function (q) { return q.id; }),
-             turns: state.chat };
+             turns: state.chat.filter(function (t) { return t.q === qid; }) };
   }
-  function uploadTranscript() {
+  function uploadTranscript(item) {
     var fd = new FormData();
-    fd.append('file', new Blob([JSON.stringify(transcript())], { type: 'application/json' }), 'transcript.json');
+    fd.append('file', item.blob, 'transcript-q' + (item.q + 1) + '.json');
     fd.append('upload_preset', PRESET);
-    fd.append('context', contextString('transcript'));
+    fd.append('context', contextString(item));
     // A few kilobytes. If it has not gone in 30 seconds the tapes are still marked sent: the
     // transcript never gets to hold the page at 99%.
     var ctl = window.AbortController ? new AbortController() : null;
@@ -1205,7 +1409,7 @@
       var end = Math.min(start + CHUNK, size), attempt = 0;
       function tryChunk() {
         attempt += 1;
-        return putChunk(item.blob, item.role, start, end, size, uniq).then(function () {
+        return putChunk(item, start, end, size, uniq).then(function () {
           onBytes(end - start); start = end; return step();
         }).catch(function (err) {
           // A dropped chunk is usually a wifi blip, and they have already spent ten minutes.
@@ -1218,53 +1422,104 @@
     return step();
   }
 
+  // The sender. Every finished question puts three items here (screen, camera, transcript) and
+  // they go up one at a time in the background while the next question runs. A chunk that
+  // fails three times marks its item failed and the sender moves on, and the finish screen
+  // retries whatever failed. A transcript that will not go never holds anything up: the tape
+  // is the thing, the transcript is the index into it.
+  var queue = [], sending = null, lastSent = { at: 0, q: 0 };
+  function enqueue(item) {
+    item.status = 'wait'; item.sent = 0; item.size = item.blob.size;
+    queue.push(item);
+    pumpUploads();
+  }
+  function pumpUploads() {
+    if (sending) return;
+    var item = null;
+    for (var i = 0; i < queue.length && !item; i++) if (queue[i].status === 'wait') item = queue[i];
+    if (!item) { paintUpstat(); return; }
+    sending = item; item.status = 'sending'; item.sent = 0;
+    var p = item.role === 'transcript' ? uploadTranscript(item)
+                                       : uploadOne(item, function (n) { item.sent += n; paintUpstat(); });
+    p.then(function () {
+      item.status = 'sent'; item.sent = item.size; item.blob = null;
+      if (item.role === 'screen') lastSent = { at: Date.now(), q: item.q + 1 };
+    }, function (err) {
+      item.status = 'failed'; item.error = String((err && err.message) || err).slice(0, 160);
+      try { console.warn(item.role + ' q' + (item.q + 1) + ' did not upload: ' + item.error); } catch (e) {}
+    }).then(function () { sending = null; paintUpstat(); pumpUploads(); });
+  }
+  // The small pill at the bottom right while the clock runs. It never touches the layout.
+  function paintUpstat() {
+    var el = $('upstat');
+    if (finishing || !state.tick) { el.classList.add('hidden'); return; }
+    var failed = queue.filter(function (i) { return i.status === 'failed' && i.role !== 'transcript'; });
+    if (sending && sending.role !== 'transcript') {
+      var pct = sending.size ? Math.min(99, Math.round(sending.sent / sending.size * 100)) : 0;
+      el.textContent = 'Sending question ' + (sending.q + 1) + '  ·  ' + pct + '%';
+      el.className = 'upstat';
+    } else if (failed.length) {
+      el.textContent = 'Question ' + (failed[0].q + 1) + ' has not sent yet. It retries at the end.';
+      el.className = 'upstat bad';
+    } else if (lastSent.at && Date.now() - lastSent.at < 6000) {
+      el.textContent = 'Question ' + lastSent.q + ' sent';
+      el.className = 'upstat ok';
+    } else { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+  }
+  // Read by the browser test, live and local: which files went and which did not. Nothing in
+  // it a candidate could use.
+  window.__tbQueue = function () {
+    return queue.map(function (i) { return { role: i.role, q: i.q + 1, status: i.status }; });
+  };
+
+  function mb(n) { return Math.max(1, Math.round(n / 1024 / 1024)); }
   function sendAll() {
-    if (!state.blobs.length) {
+    var tapes = queue.filter(function (i) { return i.role !== 'transcript'; });
+    if (!tapes.length) {
       flag('upflag', 'Nothing was recorded. Reload and try again, and if it happens twice, reply '
         + 'to the email you got and say so.', true);
       return;
     }
-    var total = state.blobs.reduce(function (n, b) { return n + b.blob.size; }, 0), sent = 0;
+    queue.forEach(function (i) { if (i.status === 'failed') i.status = 'wait'; });
     $('upflag').classList.add('hidden');
     $('retry').classList.add('hidden');
-    $('upNote').textContent = 'Leave this page open. Closing it now loses the recording. This is '
-      + 'about ' + Math.max(1, Math.round(total / 1024 / 1024)) + ' MB.';
-    function bytes(n) {
-      sent += n;
-      var pct = Math.min(99, Math.round((sent / total) * 100));
+    $('dl').classList.add('hidden');
+    var left = queue.reduce(function (n, i) { return n + (i.status === 'sent' ? 0 : i.size); }, 0);
+    $('upNote').textContent = 'Leave this page open until it says done.'
+      + (left ? ' About ' + mb(left) + ' MB to go.' : '');
+    pumpUploads();
+    var watch = setInterval(function () {
+      var total = 0, sent = 0;
+      queue.forEach(function (i) { total += i.size; sent += i.sent; });
+      var pct = total ? Math.min(99, Math.round((sent / total) * 100)) : 0;
       $('bar2').style.width = pct + '%';
       $('upPct').textContent = pct + '%';
-    }
-    var chain = Promise.resolve();
-    state.blobs.forEach(function (item) {
-      chain = chain.then(function () { return uploadOne(item, bytes); });
-    });
-    chain.then(function () {
-      // The exchange with the student rides up as a third, small file, with the same context
-      // string as the tapes. It is one request, and if it fails the recording is still marked
-      // sent: the tape is the thing, the transcript is the index into it.
-      return uploadTranscript().catch(function (err) {
-        try { console.warn('transcript did not upload: ' + (err.message || err)); } catch (e) {}
-      });
-    }).then(function () {
+      if (sending || queue.some(function (i) { return i.status === 'wait'; })) return;
+      clearInterval(watch);
+      var failed = queue.filter(function (i) { return i.status === 'failed' && i.role !== 'transcript'; });
+      if (failed.length) {
+        flag('upflag', 'Question ' + failed.map(function (i) { return i.q + 1; }).join(' and ')
+          + ' did not finish sending (' + failed[0].error + '). Try again. If it will not go, '
+          + 'download the files and reply to your application email with them attached.', true);
+        $('retry').classList.remove('hidden');
+        $('dl').classList.remove('hidden');
+        return;
+      }
       $('bar2').style.width = '100%'; $('upPct').textContent = '100%';
       var r = record(); r.done = 'sent'; saveRecord(r);
       show('done');
-    }).catch(function (err) {
-      flag('upflag', 'The upload did not finish (' + String(err.message || err).slice(0, 160)
-        + '). Your recording is still here in the page, so try again. If it will not go, download '
-        + 'the file and reply to your application email with it attached.', true);
-      $('retry').classList.remove('hidden');
-      $('dl').classList.remove('hidden');
-    });
+    }, 250);
   }
 
   $('retry').addEventListener('click', function () { sendAll(); });
   $('dl').addEventListener('click', function () {
-    state.blobs.forEach(function (item) {
+    queue.forEach(function (item) {
+      if (item.status === 'sent' || !item.blob || item.role === 'transcript') return;
       var a = document.createElement('a');
       a.href = URL.createObjectURL(item.blob);
-      a.download = (state.name.replace(/[^A-Za-z0-9]+/g, '-') || 'teaching-sample') + '-' + item.role + '.webm';
+      a.download = (state.name.replace(/[^A-Za-z0-9]+/g, '-') || 'teaching-sample')
+        + '-q' + (item.q + 1) + '-' + item.role + '.webm';
       document.body.appendChild(a); a.click(); a.remove();
     });
   });
@@ -1285,9 +1540,9 @@
         + 'nothing more to do here. You will hear back either way.');
     }
     if (r.done === 'recorded') {
-      return closed('Your recording did not finish sending.',
-        'The page was closed while your recording was on its way, and the recording went with '
-        + 'it. Reply to the email that sent you here and say what happened.');
+      return closed('Part of your recording did not finish sending.',
+        'The page was closed while your last question was on its way. The questions that '
+        + 'finished sending reached us. Reply to the email that sent you here and say what happened.');
     }
     var now = Date.now();
     var last = r.sched[r.sched.length - 1].t;

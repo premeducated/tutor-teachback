@@ -78,9 +78,13 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
 .pick span{font-size:13px;color:var(--ink-soft);line-height:1.5}
 .subs{margin:2px 0 16px 30px;padding-left:14px;border-left:2px solid var(--line)}
 .subs .pick{padding:10px 12px;margin-bottom:7px}
+.only{margin:18px 0 10px;padding:12px 14px;border-left:3px solid var(--gold);background:#FDF9EE;border-radius:0 9px 9px 0;
+  font-size:14px;line-height:1.55;color:#6B5310}
+.only b{color:var(--ink)}
 /* ---- recording ---- */
-.bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 16px;
+.bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 16px;min-height:68px;
   background:var(--ink);color:#fff;border-radius:12px;margin-bottom:14px;position:sticky;top:10px;z-index:40}
+.bar button{white-space:nowrap;min-width:190px}
 .bar.teach{background:#0A4A44}
 .bar.last{background:#6E2A16}
 .dot{width:10px;height:10px;border-radius:50%;background:#FF5A5A;display:inline-block;margin-right:8px;
@@ -98,11 +102,26 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
 .bar button.armed{outline:2px solid #fff;outline-offset:2px}
 .bar .ghost.armed{background:rgba(255,255,255,.22)}
 .bar button.stop.armed{background:#C43A3A}
-.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid var(--line);
-  border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:78px;z-index:39}
-.tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink)}
+/* One line and a fixed height. It used to wrap: the Total figure changes width every second
+   and the pen label grew when the pen was on, so the toolbar grew a second line, everything
+   under it jumped, and the sticky offsets were wrong (Lucas, 2026-09-02: "this bar extends
+   and then unextends", "kept moving on its own"). */
+.tools{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;background:#fff;border:1px solid var(--line);
+  border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:88px;z-index:39;height:50px}
+.tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink);white-space:nowrap}
 .tools button:hover{background:#EAE5DA}
 .tools button.on{background:var(--teal);color:#fff}
+.tools button[data-tool=pen]{min-width:128px}
+/* A press you can see. The text tools act on a selection, so a press with nothing selected
+   used to do nothing at all and say nothing (Lucas: "there's no confirmation that i've clicked
+   those buttons"). Now a press flashes, and a press with nothing selected says what to do. */
+.tools button.flash{background:var(--teal);color:#fff;transition:none}
+.tools button.on.flash{background:var(--teal-ink)}
+.tools .note{white-space:nowrap;font-variant-numeric:tabular-nums}
+.toolhint{position:absolute;left:12px;top:calc(100% + 6px);background:var(--ink);color:#fff;font-size:12.5px;
+  padding:6px 10px;border-radius:7px;box-shadow:var(--shadow);pointer-events:none;white-space:nowrap}
+.toolhint:empty{display:none}
+.toolhint:after{content:'';position:absolute;left:14px;top:-5px;border:5px solid transparent;border-top:0;border-bottom-color:var(--ink)}
 .tools .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
 .swatch{width:22px;height:22px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);
   cursor:pointer;padding:0}
@@ -119,6 +138,23 @@ ol.opts li{color:var(--ink);margin-bottom:7px;line-height:1.55}
 .xo:hover{background:#F1EDE4;color:var(--ink)}
 ol.opts li.struck{text-decoration:line-through;color:var(--ink-soft)}
 ol.opts li.struck .xo{color:var(--ink)}
+/* Lock in: the answer the candidate commits to. It rides up with the recording and the bot
+   checks it against the key (Lucas, 2026-09-02: "are we requiring them to lock in an answer
+   choice somehow? because currently, there's no way to do that"). */
+.lock{float:right;margin-left:8px;padding:1px 9px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;
+  color:var(--teal-ink);background:#EAF5F3;border:1px solid #BFE0DB;line-height:1.55;user-select:none;-webkit-user-select:none;
+  white-space:nowrap}
+.lock:hover{background:#D9EEEA}
+ol.opts li.picked{background:#F0F8F7;border-radius:8px;box-shadow:0 0 0 2px #BFE0DB}
+ol.opts li.picked .lock{background:var(--teal);color:#fff;border-color:var(--teal)}
+ol.opts li.picked .lock:before{content:"\2713\00a0"}
+.board{margin-top:14px;border:2px dashed #CFD9E2;border-radius:11px;min-height:240px;background:#fff;position:relative;
+  cursor:crosshair;touch-action:none}
+.board-tag{position:absolute;left:12px;top:10px;font-size:12px;color:#8A98A8;pointer-events:none;user-select:none}
+.upstat{position:fixed;right:16px;bottom:16px;z-index:35;background:var(--ink);color:#fff;font-size:12.5px;font-weight:600;
+  padding:8px 12px;border-radius:20px;box-shadow:var(--shadow);font-variant-numeric:tabular-nums}
+.upstat.ok{background:var(--teal)}
+.upstat.bad{background:var(--bad)}
 .prompt{border-left:3px solid var(--gold);background:#FDF9EE;padding:12px 14px;border-radius:0 9px 9px 0;
   font-size:14.5px;line-height:1.55;color:#6B5310;margin:0 0 12px}
 .prompt.teach{border-color:var(--teal);background:#F0F8F7;color:var(--teal-ink)}
@@ -149,10 +185,19 @@ ol.opts li.struck .xo{color:var(--ink)}
 /* ---- the student ---- */
 .student{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
   padding:12px 14px;margin:0 0 12px;position:relative;z-index:20}
-/* On a laptop screen the column leaves room at the side, so the real student sits beside the
-   question rather than under it. Below the ink canvas (30) so drawing still goes over it. */
-@media (min-width:1260px){#student{position:fixed;right:24px;top:110px;width:320px;
-  max-height:calc(100vh - 140px);display:flex;flex-direction:column;margin:0}}
+/* On a wide screen the record screen is two columns: the question on the left, the student
+   on the right, both inside the page. It used to be a fixed panel at the right edge, which
+   sat on top of the column at every laptop width (34 px over on a 1440 wide screen, Lucas's
+   "this is overlapping" screenshot). Below the ink canvas (30) so drawing still goes over it. */
+@media (min-width:1180px){
+  body.recording .wrap{max-width:1180px}
+  #record{display:grid;grid-template-columns:minmax(0,1fr) 320px;column-gap:24px;align-items:start}
+  #record > *{grid-column:1}
+  #record > .bar,#record > .tools{grid-column:1 / -1}
+  #record > #student{grid-column:2;grid-row:3 / span 4;position:sticky;top:150px;margin:0;
+    display:flex;flex-direction:column;max-height:calc(100vh - 170px)}
+  #record > #student.hidden{display:none !important}
+}
 .st-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:8px}
 .st-state{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-soft);
   padding:3px 8px;border-radius:20px;background:#F1EDE4;white-space:nowrap}
@@ -221,9 +266,8 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <li><strong>Show an image from Google Images if it helps you explain something.</strong>
         Images, drawings and notes are welcome and none of them is required.</li>
       </ol>
-      <p class="note">You can type on the question, bold it, highlight it, cross out answer
-      choices and draw on the screen, the same way you would use a shared document in a
-      session.</p>
+      <p class="note">You can type anywhere on the question, highlight it, cross out choices,
+      lock in your answer, and draw on a whiteboard or over the question itself.</p>
     </div>
     <div class="card">
       <h2>Who is this</h2>
@@ -243,8 +287,8 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       <p id="resumeNote"></p>
       <div class="big" id="resumeClock"></div>
       <p>The clock did not stop while the page was closed, and it will not stop now. Press
-      Continue, give the page your camera and screen again, and you pick up exactly where the
-      clock is. Anything you said before the page closed was not recorded, so cover it again.</p>
+      Continue, give the page your camera and screen again, and you pick up where the clock is.
+      Questions you finished are already sent. The one you were on records again from here.</p>
       <button id="resumeGo">Continue</button>
     </div>
   </section>
@@ -261,14 +305,12 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
   <section id="pick" class="hidden">
     <div class="card">
       <h1>What do you want to tutor?</h1>
-      <p>Your questions come from what you pick here, so pick what you would actually take a
-      student through. You get two questions for each one you tick, so ticking two means four
-      questions.</p>
+      <p>Two questions for each box you tick. Tick what you would actually take a student through.</p>
       <div id="pickflag" class="flag hidden"></div>
 
       <label class="pick" id="p1"><input type="checkbox" id="c1">
         <span><b>COMLEX Level 1 / USMLE Step 1, all of it</b>
-        <span>Every basic science subject. OMM and biostats are listed under On every exam, below.</span></span></label>
+        <span>Every basic science subject.</span></span></label>
 
       <label class="pick" id="p2"><input type="checkbox" id="c2">
         <span><b>COMLEX Level 2 / USMLE Step 2, all of it</b>
@@ -280,17 +322,15 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <div id="subs"></div>
       </div>
 
-      <div id="everyWrap" class="subs">
-        <p class="note" style="margin:0 0 10px"><strong>On every exam.</strong> These sit outside the
-        two exams above because they are tested on both. If you tutor one of these on its own,
-        this is your tick.</p>
-        <label class="pick" id="p3"><input type="checkbox" id="c3">
-          <span><b>OMM</b>
-          <span>Osteopathic principles and manipulative treatment, every COMLEX level.</span></span></label>
-        <label class="pick" id="p4"><input type="checkbox" id="c4">
-          <span><b>Biostatistics and epidemiology</b>
-          <span>COMLEX and USMLE, every level.</span></span></label>
-      </div>
+      <div class="only" id="everyWrap"><b>OMM and biostats are separate.</b> Tick one only if it is the
+      only thing you tutor. An OMM tutor ticks OMM and nothing else. A biostatistician ticks
+      biostats and nothing else.</div>
+      <label class="pick" id="p3"><input type="checkbox" id="c3">
+        <span><b>OMM</b>
+        <span>Osteopathic principles and manipulative treatment, every COMLEX level.</span></span></label>
+      <label class="pick" id="p4"><input type="checkbox" id="c4">
+        <span><b>Biostatistics and epidemiology</b>
+        <span>COMLEX and USMLE, every level.</span></span></label>
 
       <div class="row" style="margin-top:6px">
         <button id="toSetup">Continue</button>
@@ -313,27 +353,22 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           <button class="ghost">Start teaching now</button>
         </div>
       </div>
-      <p class="note" style="margin-bottom:16px">This bar sits at the top of the real screen. The
-      clock counts down: <strong><span id="dWork">1 minute 30 seconds</span></strong> to read and
-      work each question, then <strong><span id="dTeach2">5 minutes</span></strong> to teach it,
-      and it moves on by itself. The bar shows <strong>one button at a time</strong>, and you never
-      have to press it. <strong>Start teaching now</strong> gives up the rest of your reading
-      time. <strong>Next question</strong> takes its place while you teach and gives up the rest
-      of your teaching time. On the last question it reads <strong>Finish and send</strong>, which
-      ends the attempt and sends the recording. Next question and Finish and send each need
-      two presses, so a stray click does nothing, and none of them can give you more time.</p>
+      <p class="note" style="margin-bottom:16px">The clock runs by itself:
+      <strong><span id="dWork">1 minute 30 seconds</span></strong> to work each question, then
+      <strong><span id="dTeach2">5 minutes</span></strong> to teach it. The one button on the bar
+      skips ahead when you are done early. It takes two presses and never adds time.</p>
 
       <div class="try">
         <strong>Try each of these on the practice question below:</strong>
         <ol style="margin:8px 0 0">
-          <li>Select a few words and press <strong>Highlight</strong>, then <strong>B</strong> for bold.</li>
-          <li>Click the <strong>&#x2715;</strong> beside an answer choice to cross it out, and again to
-          bring it back. <strong>Strike</strong> crosses out whatever text you have selected.</li>
-          <li>Press <strong>Draw on the screen</strong>, drag anywhere on the page, pick a colour,
-          then press it again to stop drawing. <strong>Erase drawing</strong> clears it.</li>
-          <li>Type into the question itself, and into the blank area under it.</li>
-          <li>Press <strong>Talk to the student</strong> under the question. Ask them what they
-          picked and why. They answer out loud and in the box, and they stay quiet while you explain.</li>
+          <li><strong>Type anywhere on the question.</strong> Click next to an answer choice or
+          into the stem and type.</li>
+          <li>Select words and press <strong>Highlight</strong>, <strong>B</strong> or
+          <strong>Strike</strong>. The <strong>&#x2715;</strong> beside a choice crosses it out.</li>
+          <li>Press <strong>Lock in</strong> beside the answer you would pick.</li>
+          <li><strong>Draw in the whiteboard</strong> under the question. To draw over the question
+          itself, or anywhere else on the page, press <strong>Draw anywhere</strong> first.</li>
+          <li>Press <strong>Talk to the student</strong>. Ask them what they picked and why.</li>
         </ol>
       </div>
 
@@ -343,11 +378,12 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <button data-tool="mark" title="Highlight the selected text">Highlight</button>
         <button data-tool="clear" title="Remove formatting from the selection">Clear</button>
         <div class="sep"></div>
-        <button data-tool="pen">Draw on the screen</button>
+        <button data-tool="pen">Draw anywhere</button>
         <button class="swatch on" data-c="#D93A3A" style="background:#D93A3A"></button>
         <button class="swatch" data-c="#0E8C81" style="background:#0E8C81"></button>
         <button class="swatch" data-c="#10314F" style="background:#10314F"></button>
         <button data-tool="erase" class="ghost">Erase drawing</button>
+        <span class="toolhint" data-hint></span>
       </div>
 
       <div class="prompt">Practice question. It is not one of yours, it is easy on purpose, and
@@ -360,11 +396,11 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           conjunctivae. Hemoglobin is 9.8 g/dL and mean corpuscular volume is 71 fL. Which of the
           following is the most likely additional laboratory finding?</div>
           <ol class="opts">
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Decreased serum ferritin</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Decreased total iron-binding capacity</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Increased reticulocyte count</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Increased serum iron</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Normal red cell distribution width</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Decreased serum ferritin</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Decreased total iron-binding capacity</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Increased reticulocyte count</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Increased serum iron</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Normal red cell distribution width</li>
           </ol>
         </div>
       </div>
@@ -382,8 +418,10 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         </div>
         <div class="st-note" data-st-note></div>
       </aside>
+      <div class="board" id="pboard" data-board><span class="board-tag">Whiteboard. Draw here with your
+      mouse or trackpad. Press Draw anywhere to draw over the question too.</span></div>
       <div class="scratch" contenteditable="true" spellcheck="false"
-           data-ph="Room to work. Type here the way you would on a shared doc with a student."></div>
+           data-ph="Room to type. You can also type straight onto the question above."></div>
       <div class="row" style="margin-top:16px">
         <button id="toSetup2">Got it, set up my camera and screen</button>
         <span class="note">Your drawing is wiped before the real question.</span>
@@ -440,12 +478,13 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       <button data-tool="mark" id="bMark" title="Highlight the selected text">Highlight</button>
       <button data-tool="clear" id="bClear" title="Remove formatting from the selection">Clear</button>
       <div class="sep"></div>
-      <button data-tool="pen" id="bPen">Draw on the screen</button>
+      <button data-tool="pen" id="bPen">Draw anywhere</button>
       <button class="swatch on" data-c="#D93A3A" style="background:#D93A3A"></button>
       <button class="swatch" data-c="#0E8C81" style="background:#0E8C81"></button>
       <button class="swatch" data-c="#10314F" style="background:#10314F"></button>
       <button data-tool="erase" id="bErase" class="ghost">Erase drawing</button>
       <span class="note" style="margin-left:auto" id="phase"></span>
+      <span class="toolhint" data-hint></span>
     </div>
 
     <div class="prompt" id="phaseNote"></div>
@@ -461,20 +500,23 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         </div>
         <div class="st-note" data-st-note></div>
       </aside>
+    <div class="board" id="board" data-board><span class="board-tag">Whiteboard. Draw here with your
+    mouse or trackpad. Press Draw anywhere to draw over the question too.</span></div>
     <div class="scratch" id="scratch" contenteditable="true" spellcheck="false"
-         data-ph="Room to work. Type here the way you would on a shared doc with a student."></div>
+         data-ph="Room to type. You can also type straight onto the question above."></div>
   </section>
+  <div class="upstat hidden" id="upstat"></div>
 
   <!-- ---------- 6. upload ---------- -->
   <section id="upload" class="hidden">
     <div class="card">
       <h1 id="upTitle">Sending your recording.</h1>
-      <p id="upNote">Leave this page open. Closing it now loses the recording.</p>
+      <p id="upNote">Leave this page open until it says done.</p>
       <div class="prog"><i id="bar2"></i></div>
       <p class="note" id="upPct">0%</p>
       <div id="upflag" class="flag bad hidden"></div>
       <button id="retry" class="hidden">Try sending it again</button>
-      <button id="dl" class="ghost hidden">Download the file instead</button>
+      <button id="dl" class="ghost hidden">Download the files instead</button>
     </div>
   </section>
 
@@ -490,7 +532,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
   <footer>Premeducated  ·  premeducated.com</footer>
 </div>
-<script src="questions.js?v=20260902201239"></script>
-<script src="app.js?v=20260902201239"></script>
+<script src="questions.js?v=20260902233310"></script>
+<script src="app.js?v=20260902233310"></script>
 </body>
 </html>

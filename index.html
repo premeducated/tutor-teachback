@@ -101,6 +101,11 @@ button.stop:hover{background:#8A2222}
 .stem{font-size:16.5px;line-height:1.62;color:var(--ink);margin-bottom:16px}
 ol.opts{list-style:upper-alpha;padding-left:24px;margin:0}
 ol.opts li{color:var(--ink);margin-bottom:7px;line-height:1.55}
+.xo{float:right;margin-left:12px;padding:0 6px;border-radius:5px;cursor:pointer;color:var(--ink-soft);
+  font-size:13px;line-height:1.55;user-select:none;-webkit-user-select:none}
+.xo:hover{background:#F1EDE4;color:var(--ink)}
+ol.opts li.struck{text-decoration:line-through;color:var(--ink-soft)}
+ol.opts li.struck .xo{color:var(--ink)}
 .prompt{border-left:3px solid var(--gold);background:#FDF9EE;padding:12px 14px;border-radius:0 9px 9px 0;
   font-size:14.5px;line-height:1.55;color:#6B5310;margin:0 0 12px}
 .prompt.teach{border-color:var(--teal);background:#F0F8F7;color:var(--teal-ink)}
@@ -155,10 +160,12 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <li><strong>Use a laptop or desktop, and share your entire screen.</strong> Your screen is
         how we see you work. A phone cannot share one, and a single window or tab hides the rest.</li>
         <li><strong>Give the page your camera, microphone and screen.</strong> Your browser will ask.</li>
-        <li><strong>Two questions, on a clock.</strong> Each one gives you
-        <strong><span id="tWork">90 seconds</span></strong> to read it and work it, then
-        <strong><span id="tTeach">4 minutes</span></strong> to teach it. The clock moves on by
-        itself, so the whole thing takes about <strong><span id="tTotal">11 minutes</span></strong>.</li>
+        <li><strong>Two questions for each exam or topic you tick, on a clock.</strong> Each
+        question gives you <strong><span id="tWork">90 seconds</span></strong> to read it and work
+        it, then <strong><span id="tTeach">5 minutes</span></strong> to teach it. The clock moves
+        on by itself, so one exam or topic takes about
+        <strong><span id="tTotal">13 minutes</span></strong> and two take about
+        <strong><span id="tTotal2">26 minutes</span></strong>.</li>
         <li><strong>One take.</strong> Once you press Start the clock does not stop. Reloading the
         page, closing it, or coming back later does not give you more time and does not change
         your questions.</li>
@@ -171,8 +178,9 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <li><strong>Show an image from Google Images if it helps you explain something.</strong>
         Images, drawings and notes are welcome and none of them is required.</li>
       </ol>
-      <p class="note">You can type on the question, bold it, highlight it and draw on the screen,
-      the same way you would use a shared document in a session.</p>
+      <p class="note">You can type on the question, bold it, highlight it, cross out answer
+      choices and draw on the screen, the same way you would use a shared document in a
+      session.</p>
     </div>
     <div class="card">
       <h2>Who is this</h2>
@@ -211,12 +219,13 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     <div class="card">
       <h1>What do you want to tutor?</h1>
       <p>Your questions come from what you pick here, so pick what you would actually take a
-      student through. You get two.</p>
+      student through. You get two questions for each one you tick, so ticking two means four
+      questions.</p>
       <div id="pickflag" class="flag hidden"></div>
 
       <label class="pick" id="p1"><input type="checkbox" id="c1">
         <span><b>COMLEX Level 1 / USMLE Step 1</b>
-        <span>All of it. Level 1 and Step 1 are not split by subject.</span></span></label>
+        <span>All of it except OMM and biostats, which have their own ticks below.</span></span></label>
 
       <label class="pick" id="p2"><input type="checkbox" id="c2">
         <span><b>COMLEX Level 2 / USMLE Step 2, all of it</b>
@@ -227,6 +236,14 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         and Step 2 subjects you are comfortable with:</p>
         <div id="subs"></div>
       </div>
+
+      <label class="pick" id="p3"><input type="checkbox" id="c3">
+        <span><b>OMM</b>
+        <span>Osteopathic principles and manipulative treatment, on every COMLEX level.</span></span></label>
+
+      <label class="pick" id="p4"><input type="checkbox" id="c4">
+        <span><b>Biostatistics and epidemiology</b>
+        <span>On every exam, COMLEX and USMLE.</span></span></label>
 
       <div class="row" style="margin-top:6px">
         <button id="toSetup">Continue</button>
@@ -262,6 +279,8 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <strong>Try each of these on the practice question below:</strong>
         <ol style="margin:8px 0 0">
           <li>Select a few words and press <strong>Highlight</strong>, then <strong>B</strong> for bold.</li>
+          <li>Click the <strong>&#x2715;</strong> beside an answer choice to cross it out, and again to
+          bring it back. <strong>Strike</strong> crosses out whatever text you have selected.</li>
           <li>Press <strong>Draw on the screen</strong>, drag anywhere on the page, pick a colour,
           then press it again to stop drawing. <strong>Erase drawing</strong> clears it.</li>
           <li>Type into the question itself, and into the blank area under it.</li>
@@ -270,6 +289,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
       <div class="tools plain" data-tools>
         <button data-tool="bold" title="Bold the selected text"><b>B</b></button>
+        <button data-tool="strike" title="Cross out the selected text"><s>Strike</s></button>
         <button data-tool="mark" title="Highlight the selected text">Highlight</button>
         <button data-tool="clear" title="Remove formatting from the selection">Clear</button>
         <div class="sep"></div>
@@ -290,11 +310,11 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           conjunctivae. Hemoglobin is 9.8 g/dL and mean corpuscular volume is 71 fL. Which of the
           following is the most likely additional laboratory finding?</div>
           <ol class="opts">
-            <li>Decreased serum ferritin</li>
-            <li>Decreased total iron-binding capacity</li>
-            <li>Increased reticulocyte count</li>
-            <li>Increased serum iron</li>
-            <li>Normal red cell distribution width</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Decreased serum ferritin</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Decreased total iron-binding capacity</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Increased reticulocyte count</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Increased serum iron</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Normal red cell distribution width</li>
           </ol>
         </div>
       </div>
@@ -347,6 +367,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
     <div class="tools" data-tools>
       <button data-tool="bold" id="bBold" title="Bold the selected text"><b>B</b></button>
+      <button data-tool="strike" id="bStrike" title="Cross out the selected text"><s>Strike</s></button>
       <button data-tool="mark" id="bMark" title="Highlight the selected text">Highlight</button>
       <button data-tool="clear" id="bClear" title="Remove formatting from the selection">Clear</button>
       <div class="sep"></div>

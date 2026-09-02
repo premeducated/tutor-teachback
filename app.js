@@ -31,7 +31,11 @@
   var PRESET = 'tutor_teachback';
   var ENDPOINT = 'https://api.cloudinary.com/v1_1/' + CLOUD + '/video/upload';
   var CHUNK = 6 * 1024 * 1024;
-  var N_QUESTIONS = 2;
+  // Two questions for each thing they tick. Lucas 2026-09-01 night: "let's make it two
+  // questions for each thing they want to tutor if we have that many questions available. eg.
+  // if they pick level 1 and level 2 they get 4 questions total, two from level 1 and two from
+  // level 2, same timing."
+  var PER_PICK = 2;
   var HILITE = '#FFF08A';
 
   // 90 seconds is the pace of the exam itself (COMLEX Level 1 gives about 82 seconds an item,
@@ -53,7 +57,8 @@
     if (t[1] > 0) TEACH_S = t[1];
   }
   var Q_MS = (WORK_S + TEACH_S) * 1000;
-  var CAP_S = N_QUESTIONS * (WORK_S + TEACH_S);
+  var PICK_S = PER_PICK * (WORK_S + TEACH_S);      // what one tick costs them in seconds
+  function capS() { return state.questions.length * (WORK_S + TEACH_S); }
 
   var state = {
     applicant: params.get('a') || '',
@@ -65,10 +70,11 @@
     bank: null, questions: [], at: -1, phase: '', heard: false,
     sched: [], reloads: 0, resuming: null,
     away: [], surface: '',
-    picks: { l1: false, l2all: false, subs: [] }
+    picks: { l1: false, l2all: false, subs: [], omm: false, bio: false }
   };
 
-  var EXAM = { 'Level 1': 'COMLEX Level 1 / USMLE Step 1', 'Level 2': 'COMLEX Level 2 / USMLE Step 2' };
+  var EXAM = { 'Level 1': 'COMLEX Level 1 / USMLE Step 1', 'Level 2': 'COMLEX Level 2 / USMLE Step 2',
+               'OMM': 'OMM, every COMLEX level', 'Biostats': 'Biostats and epidemiology, every exam' };
   function examLabel(level) { return EXAM[level] || level; }
 
   // ---------------- screens ----------------
@@ -126,7 +132,8 @@
   // ---------------- gate ----------------
   $('tWork').textContent = spoken(WORK_S);
   $('tTeach').textContent = spoken(TEACH_S);
-  $('tTotal').textContent = Math.ceil(CAP_S / 60) + ' minutes';
+  $('tTotal').textContent = Math.ceil(PICK_S / 60) + ' minutes';
+  $('tTotal2').textContent = Math.ceil(2 * PICK_S / 60) + ' minutes';
   $('dWork').textContent = spoken(WORK_S);
   $('dTeach').textContent = spoken(TEACH_S);
   $('dTeach2').textContent = spoken(TEACH_S);
@@ -172,6 +179,8 @@
   function syncPicker() {
     state.picks.l1 = $('c1').checked;
     state.picks.l2all = $('c2').checked;
+    state.picks.omm = $('c3').checked;
+    state.picks.bio = $('c4').checked;
     state.picks.subs = [].filter.call(document.querySelectorAll('.sub'), function (c) {
       return c.checked;
     }).map(function (c) { return c.value; });
@@ -189,8 +198,10 @@
       l.classList.toggle('on', cb && cb.checked);
     });
     var pool = poolFor();
-    $('pickSummary').textContent = pool.total
-      ? pool.total + ' question' + (pool.total === 1 ? '' : 's') + ' to draw from'
+    var n = pool.count;
+    $('pickSummary').textContent = n
+      ? n + ' question' + (n === 1 ? '' : 's') + ', about ' + Math.ceil(n * (WORK_S + TEACH_S) / 60)
+        + ' minutes, drawn from ' + pool.total
       : '';
     unflag('pickflag');
   }
@@ -207,14 +218,24 @@
         return q.level === 'Level 2' && state.picks.subs.indexOf(q.group) >= 0;
       });
     }
-    return { l1: l1, l2: l2, total: l1.length + l2.length };
+    var omm = state.picks.omm
+      ? b.questions.filter(function (q) { return q.level === 'OMM'; }) : [];
+    var bio = state.picks.bio
+      ? b.questions.filter(function (q) { return q.level === 'Biostats'; }) : [];
+    // One list per tick, in the order the questions will come. A tick with fewer questions
+    // than PER_PICK gives what it has, which is Lucas's "if we have that many available".
+    var lists = [l1, l2, omm, bio].filter(function (l) { return l.length; });
+    var count = lists.reduce(function (n, l) { return n + Math.min(PER_PICK, l.length); }, 0);
+    return { l1: l1, l2: l2, omm: omm, bio: bio, lists: lists, count: count,
+             total: l1.length + l2.length + omm.length + bio.length };
   }
 
   $('toSetup').addEventListener('click', function () {
     var pool = poolFor();
     if (!pool.total) {
       return flag('pickflag', 'Pick at least one. If you do not want all of Level 2 / Step 2, '
-        + 'tick the individual subjects you are comfortable with instead.');
+        + 'tick the individual subjects you are comfortable with instead. OMM and biostats '
+        + 'are their own ticks.');
     }
     show('practice');
   });
@@ -280,21 +301,15 @@
     if (!b) return [];
     rngState = seedFrom(state.applicant);
     var pool = poolFor(), out = [], used = [];
-    // One from each level when they teach both, which is what the interview instructions
-    // have always asked candidates to prepare.
-    if (pool.l1.length && pool.l2.length) {
-      [pool.l1, pool.l2].forEach(function (list) {
+    // PER_PICK from each thing they ticked, in a fixed order (Level 1, Level 2, OMM,
+    // Biostats), and fewer only when a pool is smaller than that.
+    pool.lists.forEach(function (list) {
+      for (var i = 0; i < PER_PICK && i < list.length; i++) {
         var q = drawFrom(list, used);
-        if (q) { out.push(q); used.push(q.id); }
-      });
-    }
-    var all = pool.l1.concat(pool.l2);
-    while (out.length < N_QUESTIONS && all.length) {
-      var q = drawFrom(all, used);
-      if (!q) break;
-      out.push(q); used.push(q.id);
-      if (used.length >= all.length) break;
-    }
+        if (!q) break;
+        out.push(q); used.push(q.id);
+      }
+    });
     return out;
   }
 
@@ -420,7 +435,7 @@
     var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
       + '  ·  ' + esc(examLabel(q.level)) + '  ·  ' + esc(q.group) + '</div>'
       + '<div class="stem">' + esc(q.stem) + '</div><ol class="opts">';
-    q.options.forEach(function (o) { html += '<li>' + esc(o) + '</li>'; });
+    q.options.forEach(function (o) { html += '<li>' + XO + esc(o) + '</li>'; });
     html += '</ol>';
     $('qbox').innerHTML = html;
     window.scrollTo(0, 0);
@@ -470,7 +485,7 @@
                                                   : 'left to teach it')
       + '  ·  question ' + (pos.at + 1) + ' of ' + state.questions.length;
     var total = Math.floor((now - state.startedAt) / 1000);
-    $('phase').textContent = 'Total ' + mmss(total) + ' of ' + mmss(CAP_S);
+    $('phase').textContent = 'Total ' + mmss(total) + ' of ' + mmss(capS());
     if (now - lastStamp > 5000) { lastStamp = now; saveRecord(record()); }
   }
   var lastStamp = 0;
@@ -549,7 +564,22 @@
     try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
     document.execCommand('hiliteColor', false, HILITE);
   }); });
+  // Strike, Lucas 2026-09-01 night: "i would also like a strikethrough feature for stem text
+  // and answer choices." Two ways in: select anything and press Strike, or click the small
+  // cross beside an answer choice to cross the whole choice out, the way the exam software
+  // does it. The cross is not editable, so typing in the question never eats it.
+  all('[data-tool=strike]').forEach(function (b) { keepSelection(b, function () { document.execCommand('strikeThrough'); }); });
   all('[data-tool=clear]').forEach(function (b) { keepSelection(b, function () { document.execCommand('removeFormat'); }); });
+  var XO = '<span class="xo" contenteditable="false" title="Cross this choice out">\u2715</span>';
+  document.addEventListener('mousedown', function (e) {
+    if (e.target.classList && e.target.classList.contains('xo')) e.preventDefault();
+  });
+  document.addEventListener('click', function (e) {
+    var x = e.target;
+    if (!x.classList || !x.classList.contains('xo')) return;
+    e.preventDefault();
+    x.parentNode.classList.toggle('struck');
+  });
 
   // ---------------- drawing ----------------
   var ink = $('ink'), ctx = ink.getContext('2d');
@@ -740,11 +770,13 @@
     if (state.picks.l1) picks.push('Level 1 / Step 1');
     if (state.picks.l2all) picks.push('Level 2 / Step 2, all of it');
     if (state.picks.subs.length) picks.push(state.picks.subs.join(' and '));
+    if (state.picks.omm) picks.push('OMM');
+    if (state.picks.bio) picks.push('Biostats');
     return ['name=' + esc2(state.name), 'email=' + esc2(state.email),
             'applicant=' + esc2(state.applicant || 'none'), 'role=' + role,
             'minutes=' + Math.round((Date.now() - state.startedAt) / 60000),
             'started=' + new Date(state.startedAt).toISOString(),
-            'cap=' + CAP_S, 'reloads=' + state.reloads,
+            'cap=' + capS(), 'reloads=' + state.reloads,
             'surface=' + (state.surface || 'unknown'),
             'away=' + state.away.length,
             'awaysec=' + state.away.reduce(function (n, a) { return n + (a.t - a.f); }, 0),

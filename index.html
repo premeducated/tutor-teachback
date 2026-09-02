@@ -133,6 +133,31 @@ ol.opts li.struck .xo{color:var(--ink)}
 .try li{margin-bottom:5px}
 .mic{font-size:13px;font-weight:600;color:var(--warn);margin-top:6px}
 .mic.ok{color:var(--teal-ink)}
+/* ---- the student ---- */
+.student{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  padding:12px 14px;margin:0 0 12px;position:relative;z-index:20}
+/* On a laptop screen the column leaves room at the side, so the real student sits beside the
+   question rather than under it. Below the ink canvas (30) so drawing still goes over it. */
+@media (min-width:1260px){#student{position:fixed;right:24px;top:110px;width:320px;
+  max-height:calc(100vh - 140px);display:flex;flex-direction:column;margin:0}}
+.st-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:8px}
+.st-state{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-soft);
+  padding:3px 8px;border-radius:20px;background:#F1EDE4;white-space:nowrap}
+.st-state.live{color:var(--teal-ink);background:#EAF5F3}
+.st-state.live:before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--teal);
+  margin-right:6px;vertical-align:1px;animation:pulse 1.4s infinite}
+.st-state.busy{color:#6B5310;background:#FDF9EE}
+.st-state.talk{color:#fff;background:var(--teal)}
+.st-state.typed{color:#6B3A1C;background:#FDF6F1}
+.st-log{overflow-y:auto;max-height:46vh;min-height:56px;display:flex;flex-direction:column;gap:8px;padding:2px}
+.st-them{align-self:flex-start;background:#EAF5F3;color:var(--ink);border-radius:12px 12px 12px 3px;
+  padding:9px 12px;font-size:14.5px;line-height:1.5;max-width:92%}
+.st-you{align-self:flex-end;color:var(--ink-soft);font-size:12.5px;line-height:1.45;max-width:92%;text-align:right;font-style:italic}
+.st-type{display:flex;gap:6px;margin-top:8px}
+.st-type input{flex:1;margin:0;padding:8px 10px;font-size:14px}
+.st-type button{padding:8px 12px;font-size:13px}
+.st-note{font-size:12px;color:var(--warn);margin-top:6px;line-height:1.45}
+.st-note:empty{display:none}
 #ink{position:fixed;inset:0;z-index:30;pointer-events:none}
 #ink.live{pointer-events:auto;cursor:crosshair}
 footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0}
@@ -172,6 +197,11 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <li><strong>Teach, do not answer.</strong> You get the vignette cold, with no answer, the
         same as the student would. Teach through it the way you would with someone who got it
         wrong and does not know why.</li>
+        <li><strong>A student talks back.</strong> While you teach, a second-year student who got
+        the question wrong is on the page, in text and out loud. The page transcribes what you say
+        so they can hear you. They answer what you ask and stay quiet while you explain. Ask them
+        what they picked and why, and lead them to it. We are listening for the questions you ask,
+        not only the explanation you give.</li>
         <li><strong>You can use Google or an AI if you get stuck, though we would rather you did
         not.</strong> Your whole screen is in the recording and the page notes each time you
         leave it.</li>
@@ -284,6 +314,8 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           <li>Press <strong>Draw on the screen</strong>, drag anywhere on the page, pick a colour,
           then press it again to stop drawing. <strong>Erase drawing</strong> clears it.</li>
           <li>Type into the question itself, and into the blank area under it.</li>
+          <li>Press <strong>Talk to the student</strong> under the question. Ask them what they
+          picked and why. They answer out loud and in the box, and they stay quiet while you explain.</li>
         </ol>
       </div>
 
@@ -318,6 +350,20 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           </ol>
         </div>
       </div>
+      <div class="row" style="margin:14px 0 10px">
+        <button id="pTalk" class="ghost">Talk to the student</button>
+        <span class="note">They got this one wrong. Ask them what they picked and why, and lead
+        them to it. Nothing here counts.</span>
+      </div>
+      <aside class="student hidden" id="pstudent">
+        <div class="st-head"><b>Your practice student</b><span class="st-state" data-st-state>off</span></div>
+        <div class="st-log" data-st-log></div>
+        <div class="st-type hidden" data-st-type>
+          <input type="text" data-st-input placeholder="Say it to the student" autocomplete="off">
+          <button data-st-send>Send</button>
+        </div>
+        <div class="st-note" data-st-note></div>
+      </aside>
       <div class="scratch" contenteditable="true" spellcheck="false"
            data-ph="Room to work. Type here the way you would on a shared doc with a student."></div>
       <div class="row" style="margin-top:16px">
@@ -383,6 +429,15 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     <div class="card" style="padding:0;overflow:hidden">
       <div class="q" id="qbox" contenteditable="true" spellcheck="false"></div>
     </div>
+      <aside class="student hidden" id="student">
+        <div class="st-head"><b>Your student</b><span class="st-state" data-st-state>off</span></div>
+        <div class="st-log" data-st-log></div>
+        <div class="st-type hidden" data-st-type>
+          <input type="text" data-st-input placeholder="Say it to the student" autocomplete="off">
+          <button data-st-send>Send</button>
+        </div>
+        <div class="st-note" data-st-note></div>
+      </aside>
     <div class="scratch" id="scratch" contenteditable="true" spellcheck="false"
          data-ph="Room to work. Type here the way you would on a shared doc with a student."></div>
   </section>

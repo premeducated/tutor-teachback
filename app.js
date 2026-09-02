@@ -30,6 +30,7 @@
   var CLOUD = 'dyqrlzcbs';
   var PRESET = 'tutor_teachback';
   var ENDPOINT = 'https://api.cloudinary.com/v1_1/' + CLOUD + '/video/upload';
+  var RAW_ENDPOINT = 'https://api.cloudinary.com/v1_1/' + CLOUD + '/raw/upload';
   var CHUNK = 6 * 1024 * 1024;
   // Two questions for each thing they tick. Lucas 2026-09-01 night: "let's make it two
   // questions for each thing they want to tutor if we have that many questions available. eg.
@@ -37,13 +38,19 @@
   // level 2, same timing."
   var PER_PICK = 2;
   var HILITE = '#FFF08A';
+  // The AI student. One hosted function holds the answer key and the model key, because this
+  // page is static and must never hold either. The browser sends a question id, the stem and
+  // choices it is showing, and what the candidate said. Nothing comes back but the student's
+  // words. There is no key in this file, and deploy.sh refuses to ship one.
+  var STUDENT_URL = 'https://ztmogkvswdrinseajzdw.supabase.co/functions/v1/teachback-student';
 
   // 90 seconds is the pace of the exam itself (COMLEX Level 1 gives about 82 seconds an item,
-  // Step 1 about 90). Five minutes to teach is Lucas's ruling of 2026-09-01: "let's give them
-  // five minutes for the explanation." Two questions come to thirteen minutes. Change these
-  // two lines and nothing else, every number on the page follows.
+  // Step 1 about 90). Eight minutes to teach is Lucas's ruling of 2026-09-01 late night, made
+  // for the student: "up to 8 minutes for each question if we get more prompting with the
+  // socratic thing." It was five before the student existed. Two questions come to nineteen
+  // minutes. Change these two lines and nothing else, every number on the page follows.
   var WORK_S = 90;
-  var TEACH_S = 300;
+  var TEACH_S = 480;
 
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
@@ -69,7 +76,7 @@
     startedAt: 0, tick: null, level: null,
     bank: null, questions: [], at: -1, phase: '', heard: false,
     sched: [], reloads: 0, resuming: null,
-    away: [], surface: '',
+    away: [], surface: '', chat: [],
     picks: { l1: false, l2all: false, subs: [], omm: false, bio: false }
   };
 
@@ -126,7 +133,7 @@
   function record() {
     return { v: 1, started: state.startedAt, qids: state.questions.map(function (q) { return q.id; }),
              sched: state.sched, picks: state.picks, reloads: state.reloads, done: false,
-             name: state.name, email: state.email, away: state.away, seen: Date.now() };
+             name: state.name, email: state.email, away: state.away, chat: state.chat, seen: Date.now() };
   }
 
   // ---------------- gate ----------------
@@ -245,6 +252,7 @@
   $('toSetup2').addEventListener('click', function () {
     setPen(false);
     eraseInk();
+    pStudent.stop();
     toSetup();
   });
 
@@ -453,11 +461,14 @@
       $('phaseNote').textContent = 'Read it and work it. You are recording, so think out loud if '
         + 'you like. Teaching time starts when the clock hits zero, or sooner if you press Start '
         + 'teaching now.';
+      student.stop();
     } else {
-      $('phaseNote').textContent = 'Teach it, out loud, the way you would to a student who got it '
-        + 'wrong and does not know why. ' + (last
+      $('phaseNote').textContent = 'Teach it, out loud. Your student got it wrong and is on the '
+        + 'page. Ask them what they picked and why, and lead them to it. They answer what you ask '
+        + 'and stay quiet while you explain. ' + (last
           ? 'When the clock hits zero the recording ends and sends itself.'
           : 'When the clock hits zero the next question replaces this one.');
+      student.begin(state.questions[state.at], state.at + 1, state.startedAt);
     }
   }
 
@@ -644,6 +655,264 @@
     });
   });
 
+  // ---------------- the student ----------------
+  // Lucas 2026-09-01 late night, his go on the browser-voice student. What he is after, in
+  // his words: "identify good tutors who ask questions like 'how did you get that answer?'
+  // 'tell me about...' etc instead of just lecturing the whole time and video interviews are
+  // really just lectures in disguise." So during the teach window a second-year student who
+  // has already picked the wrong answer is on the page. The browser transcribes the candidate
+  // (Web Speech API: Chrome, Edge and Safari), each stretch of speech goes to the function,
+  // and the reply comes back into a bubble and out loud through speechSynthesis. The student
+  // stays silent while being lectured: only a question or an instruction aimed at them gets
+  // an answer, and the function says which it was, so the bot can count the questions. A text
+  // box is the way in when the browser has no speech recognition (Firefox). He rejected fixed
+  // prompts, a scripted objection, and typing as the main path.
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var TTS = window.speechSynthesis || null;
+
+  // One wiring for both panels, the practice one and the real one, the way the toolbars are.
+  // `turns()` returns the array this panel writes into: state.chat for the real student, a
+  // throwaway for practice, so nothing from practice ever reaches the transcript.
+  function makeStudent(root, turns) {
+    var log = root.querySelector('[data-st-log]'), stateEl = root.querySelector('[data-st-state]');
+    var note = root.querySelector('[data-st-note]'), typeWrap = root.querySelector('[data-st-type]');
+    var input = root.querySelector('[data-st-input]'), send = root.querySelector('[data-st-send]');
+    var q = null, num = 0, t0 = 0, on = false, gen = 0;
+    var rec = null, wantListen = false, speaking = false, typedOnly = !SR;
+    var queue = [], busy = false;
+
+    function setState(s, cls) { stateEl.textContent = s; stateEl.className = 'st-state ' + (cls || ''); }
+    function bubble(who, text) {
+      var d = document.createElement('div');
+      d.className = who === 'you' ? 'st-you' : 'st-them';
+      d.textContent = text;
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+    }
+    function mine() { return turns().filter(function (t) { return q && t.q === q.id; }); }
+    function push(who, text, extra) {
+      var t = { t: Math.round((Date.now() - t0) / 1000), q: q.id, n: num, who: who, text: text };
+      if (extra) for (var k in extra) t[k] = extra[k];
+      turns().push(t);
+      if (state.tick) saveRecord(record());
+      return t;
+    }
+    function call(body) {
+      body.a = state.applicant || 'none'; body.q = q.id; body.stem = q.stem; body.options = q.options;
+      return fetch(STUDENT_URL, { method: 'POST', headers: { 'content-type': 'application/json' },
+                                  body: JSON.stringify(body) })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        });
+    }
+    function typedMode(why) {
+      typedOnly = true;
+      dropRec();
+      typeWrap.classList.remove('hidden');
+      setState('type below', 'typed');
+      if (why) note.textContent = why;
+    }
+
+    // ---- hearing the candidate ----
+    function startListening() {
+      wantListen = true;
+      if (typedOnly) { typeWrap.classList.remove('hidden'); if (!busy) setState('type below', 'typed'); return; }
+      if (rec || speaking) return;
+      try {
+        var r = new SR();
+        r.continuous = true; r.interimResults = false; r.lang = 'en-US';
+        r.onresult = function (ev) {
+          for (var i = ev.resultIndex; i < ev.results.length; i++) {
+            if (ev.results[i].isFinal) {
+              var text = (ev.results[i][0].transcript || '').trim();
+              if (text) heard(text, false);
+            }
+          }
+        };
+        r.onerror = function (ev) {
+          var e = ev && ev.error;
+          if (e === 'not-allowed' || e === 'service-not-allowed' || e === 'audio-capture') {
+            typedMode('This browser is not letting the page hear you (' + e + '), so type to the '
+              + 'student instead. The recording is still running.');
+          }
+          // no-speech, network and aborted all end the recognizer, and onend starts it again.
+        };
+        r.onend = function () {
+          if (rec === r) rec = null;
+          // Chrome stops after a stretch of silence. While the window is open, start again.
+          if (wantListen && !speaking && !typedOnly) {
+            setTimeout(function () { if (wantListen && !rec && !speaking) startListening(); }, 250);
+          }
+        };
+        rec = r;
+        r.start();
+        if (!busy) setState('listening', 'live');
+      } catch (e) {
+        rec = null;
+        typedMode('Speech recognition would not start here, so type to the student instead.');
+      }
+    }
+    function dropRec() {
+      if (!rec) return;
+      var r = rec; rec = null;
+      r.onend = null; r.onresult = null; r.onerror = null;
+      try { r.abort(); } catch (e) {}
+    }
+    function stopListening() { wantListen = false; dropRec(); }
+
+    // ---- the student talking ----
+    function pickVoice() {
+      if (!TTS) return null;
+      var vs = TTS.getVoices() || [];
+      var en = vs.filter(function (v) { return /^en[-_]/i.test(v.lang); });
+      var pref = en.filter(function (v) { return /Samantha|Google US English|Aria|Jenny|Karen|Moira|Zira/i.test(v.name); });
+      return pref[0] || en[0] || null;
+    }
+    var guard = null;
+    function speak(text, done) {
+      if (!TTS || !window.SpeechSynthesisUtterance) { done(); return; }
+      // The microphone would hear the student's own voice through the speakers, so recognition
+      // is off while the student talks and back on the moment they stop.
+      speaking = true; dropRec();
+      setState('speaking', 'talk');
+      var u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.02; u.pitch = 1.0; u.lang = 'en-US';
+      var voice = pickVoice(); if (voice) u.voice = voice;
+      var finished = false, g = gen;
+      // An utterance from a question that has since ended must not touch the mic state of
+      // the one now running (cancel() does not always fire onend, so the guard could outlive it).
+      function end() {
+        if (finished) return;
+        finished = true; clearTimeout(guard); guard = null;
+        if (g === gen) speaking = false;
+        done();
+      }
+      u.onend = end; u.onerror = end;
+      // Headless browsers and some desktops never fire onend. Never let that hold the mic.
+      guard = setTimeout(end, Math.max(3000, text.length * 90));
+      try { TTS.cancel(); TTS.speak(u); } catch (e) { end(); }
+    }
+
+    // ---- a stretch of the candidate's speech ----
+    function heard(text, typed) {
+      if (!on) return;
+      bubble('you', text);
+      var t = push('you', text, { typed: !!typed });
+      queue.push({ turn: t, text: text });
+      pump();
+    }
+    function pump() {
+      if (busy || !queue.length || !on) return;
+      busy = true;
+      var g = gen;
+      // Everything said while the last answer was in flight goes up as one stretch.
+      var items = queue.splice(0, queue.length);
+      var seg = items.map(function (i) { return i.text; }).join(' ');
+      var hist = mine().map(function (t) { return { who: t.who, text: t.text }; });
+      hist = hist.slice(0, Math.max(0, hist.length - items.length)).slice(-40);
+      setState('thinking', 'busy');
+      call({ seg: seg, history: hist }).then(function (r) {
+        if (g !== gen) return;
+        items.forEach(function (i) { i.turn.asked = !!r.asked; i.turn.addressed = !!r.addressed; });
+        if (state.tick) saveRecord(record());
+        if (r.reply) {
+          bubble('student', r.reply);
+          push('student', r.reply);
+          return new Promise(function (res) { speak(r.reply, res); });
+        }
+      }).catch(function (e) {
+        if (g !== gen) return;
+        note.textContent = 'The student did not catch that (' + String(e.message || e).slice(0, 60)
+          + '). Keep going, the recording is running.';
+      }).then(function () {
+        if (g !== gen) return;
+        busy = false;
+        if (queue.length) { pump(); return; }
+        if (typedOnly) setState('type below', 'typed');
+        else if (wantListen) { setState('listening', 'live'); startListening(); }
+      });
+    }
+
+    // ---- the window opening and closing ----
+    function begin(question, n, startedAt) {
+      if (!question) return;
+      if (on && q && q.id === question.id) return;      // same question, already running
+      stop();
+      gen += 1;
+      var g = gen;
+      q = question; num = n; t0 = startedAt || Date.now(); on = true;
+      log.innerHTML = ''; note.textContent = '';
+      root.classList.remove('hidden');
+      typeWrap.classList.toggle('hidden', !typedOnly);
+      var prior = mine();
+      if (prior.length) {
+        // Back after a reload in the middle of teaching: the exchange so far comes back and
+        // the student does not introduce themselves twice.
+        prior.forEach(function (t) { bubble(t.who, t.text); });
+        startListening();
+        return;
+      }
+      busy = true;
+      setState('joining', 'busy');
+      call({ start: true }).then(function (r) {
+        if (g !== gen) return;
+        bubble('student', r.reply);
+        push('student', r.reply, { opening: true });
+        return new Promise(function (res) { speak(r.reply, res); });
+      }).catch(function (e) {
+        if (g !== gen) return;
+        note.textContent = 'The student could not join (' + String(e.message || e).slice(0, 60)
+          + '). Teach anyway, the recording is running, and try talking to them in a moment.';
+      }).then(function () {
+        if (g !== gen) return;
+        busy = false;
+        startListening();
+        if (queue.length) pump();
+      });
+    }
+    function stop() {
+      gen += 1;
+      on = false; q = null; queue = []; busy = false;
+      stopListening();
+      if (guard) { clearTimeout(guard); guard = null; }
+      if (TTS) { try { TTS.cancel(); } catch (e) {} }
+      speaking = false;
+      root.classList.add('hidden');
+    }
+
+    send.addEventListener('click', function () {
+      var v = input.value.trim();
+      if (!v || !on) return;
+      input.value = '';
+      heard(v, true);
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); send.click(); }
+    });
+
+    return { begin: begin, stop: stop };
+  }
+
+  var practiceTurns = [];
+  var pStudent = makeStudent($('pstudent'), function () { return practiceTurns; });
+  var student = makeStudent($('student'), function () { return state.chat; });
+
+  // The practice student, on the practice question, so they can try talking to one before
+  // anything records. The function holds that question's answer beside the bank's, and it is
+  // never scored: its turns go into a throwaway array, not the transcript.
+  $('pTalk').addEventListener('click', function () {
+    var box = $('pqbox');
+    var stem = box.querySelector('.stem').textContent.replace(/\s+/g, ' ').trim();
+    var options = [].map.call(box.querySelectorAll('ol.opts li'), function (li) {
+      return li.textContent.replace(/^\s*✕\s*/, '').replace(/\s+/g, ' ').trim();
+    });
+    practiceTurns.length = 0;
+    pStudent.begin({ id: 'practice', stem: stem, options: options }, 0, Date.now());
+    $('pTalk').textContent = 'The student is here. Talk to them.';
+    $('pTalk').disabled = true;
+  });
+
   // ---------------- recording ----------------
   function pickMime(candidates) {
     for (var i = 0; i < candidates.length; i++) {
@@ -705,6 +974,7 @@
       state.name = state.resuming.name || state.name;
       state.email = state.resuming.email || state.email;
       state.away = state.resuming.away || [];
+      state.chat = state.resuming.chat || [];
       if (state.resuming.seen) noteAway(state.resuming.seen, Date.now(), 'c');
     } else {
       state.questions = chooseQuestions();
@@ -752,6 +1022,7 @@
     finishing = true;
     clearInterval(state.tick);
     clearInterval(state.level);
+    student.stop();
     var r = record(); r.done = 'recorded'; saveRecord(r);
     var pending = state.recs.length;
     if (!pending) return;
@@ -818,6 +1089,32 @@
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
+  // What the bot reads to count the candidate's questions to the student. Every stretch the
+  // candidate said (with the student's verdict on whether it asked or addressed them) and
+  // every reply, with seconds since Start and the question it happened on. Practice turns are
+  // never in here, only the recorded questions.
+  function transcript() {
+    return { v: 1, applicant: state.applicant || 'none', name: state.name,
+             started: new Date(state.startedAt).toISOString(), work_s: WORK_S, teach_s: TEACH_S,
+             speech: SR ? 'browser' : 'typed',
+             questions: state.questions.map(function (q) { return q.id; }),
+             turns: state.chat };
+  }
+  function uploadTranscript() {
+    var fd = new FormData();
+    fd.append('file', new Blob([JSON.stringify(transcript())], { type: 'application/json' }), 'transcript.json');
+    fd.append('upload_preset', PRESET);
+    fd.append('context', contextString('transcript'));
+    // A few kilobytes. If it has not gone in 30 seconds the tapes are still marked sent: the
+    // transcript never gets to hold the page at 99%.
+    var ctl = window.AbortController ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 30000) : null;
+    return fetch(RAW_ENDPOINT, { method: 'POST', body: fd, signal: ctl ? ctl.signal : undefined }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ' ' + t.slice(0, 200)); });
+      return r.json();
+    }).then(function (v) { clearTimeout(timer); return v; }, function (e) { clearTimeout(timer); throw e; });
+  }
+
   function uploadOne(item, onBytes) {
     var uniq = 'tb-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
     var size = item.blob.size, start = 0;
@@ -861,6 +1158,13 @@
       chain = chain.then(function () { return uploadOne(item, bytes); });
     });
     chain.then(function () {
+      // The exchange with the student rides up as a third, small file, with the same context
+      // string as the tapes. It is one request, and if it fails the recording is still marked
+      // sent: the tape is the thing, the transcript is the index into it.
+      return uploadTranscript().catch(function (err) {
+        try { console.warn('transcript did not upload: ' + (err.message || err)); } catch (e) {}
+      });
+    }).then(function () {
       $('bar2').style.width = '100%'; $('upPct').textContent = '100%';
       var r = record(); r.done = 'sent'; saveRecord(r);
       show('done');

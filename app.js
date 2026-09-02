@@ -34,12 +34,12 @@
   var N_QUESTIONS = 2;
   var HILITE = '#FFF08A';
 
-  // The two numbers Lucas asked for a recommendation on. 90 seconds is the pace of the exam
-  // itself (COMLEX Level 1 gives about 82 seconds an item, Step 1 about 90), and four minutes
-  // is what one question takes in a real session when it is taught and not just answered.
-  // Two questions come to eleven minutes. Change these two lines and nothing else.
+  // 90 seconds is the pace of the exam itself (COMLEX Level 1 gives about 82 seconds an item,
+  // Step 1 about 90). Five minutes to teach is Lucas's ruling of 2026-09-01: "let's give them
+  // five minutes for the explanation." Two questions come to thirteen minutes. Change these
+  // two lines and nothing else, every number on the page follows.
   var WORK_S = 90;
-  var TEACH_S = 240;
+  var TEACH_S = 300;
 
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
@@ -64,6 +64,7 @@
     startedAt: 0, tick: null, level: null,
     bank: null, questions: [], at: -1, phase: '',
     sched: [], reloads: 0, resuming: null,
+    away: [], surface: '',
     picks: { l1: false, l2all: false, subs: [] }
   };
 
@@ -119,7 +120,7 @@
   function record() {
     return { v: 1, started: state.startedAt, qids: state.questions.map(function (q) { return q.id; }),
              sched: state.sched, picks: state.picks, reloads: state.reloads, done: false,
-             name: state.name, email: state.email };
+             name: state.name, email: state.email, away: state.away, seen: Date.now() };
   }
 
   // ---------------- gate ----------------
@@ -214,6 +215,9 @@
     toSetup();
   });
 
+  // Laptop only, Lucas 2026-09-01: "let's just make sure that people do this on their laptop."
+  // The screen is how he sees what they reference and how fast, so there is no camera-only
+  // path any more. A phone or a tablet is told to come back on a laptop with the same link.
   function toSetup() {
     show('setup');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -221,8 +225,10 @@
       $('askCam').disabled = true;
     } else if (!navigator.mediaDevices.getDisplayMedia) {
       flag('setupflag', 'This device cannot share a screen, which almost always means a phone or '
-        + 'a tablet. You can still record your camera and voice, but if you want to draw or show '
-        + 'anything, stop and come back on a laptop.');
+        + 'a tablet. The teaching sample has to be done on a laptop or desktop, because your '
+        + 'screen is how we see you work. Come back on one. The link in your email stays good '
+        + 'and your clock has not started.', true);
+      $('askCam').disabled = true;
     }
   }
 
@@ -290,17 +296,31 @@
       $('pvCam').srcObject = s;
       $('askCam').textContent = 'Camera and microphone are on';
       $('askCam').disabled = true;
-      $('askScreen').disabled = !navigator.mediaDevices.getDisplayMedia;
+      $('askScreen').disabled = false;
       meter(s);
       unflag('setupflag');
-      if (!navigator.mediaDevices.getDisplayMedia) readyCheck();
     }).catch(function (err) { flag('setupflag', permMessage(err, 'camera and microphone'), true); });
   });
 
   $('askScreen').addEventListener('click', function () {
     navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 15, max: 20 } }, audio: false
+      // displaySurface is a hint to open the picker on the whole-screen pane. Browsers that
+      // honour it help, browsers that ignore it are checked after the fact below.
+      video: { displaySurface: 'monitor', frameRate: { ideal: 15, max: 20 } }, audio: false
     }).then(function (s) {
+      var track = s.getVideoTracks()[0];
+      var settings = (track && track.getSettings) ? (track.getSettings() || {}) : {};
+      state.surface = settings.displaySurface || 'unknown';
+      if (settings.displaySurface && settings.displaySurface !== 'monitor') {
+        // A single window or tab hides whatever they open beside it, which is the one thing
+        // the screen is there to show. Ask again rather than record a blind tape.
+        s.getTracks().forEach(function (t) { t.stop(); });
+        flag('setupflag', 'You shared ' + (settings.displaySurface === 'browser' ? 'a single tab'
+          : 'a single window') + '. Share your entire screen instead, so whatever you open to '
+          + 'teach or look something up is in the recording. Press the Screen button again and '
+          + 'pick the whole screen.', true);
+        return;
+      }
       state.scrStream = s;
       $('pvScr').srcObject = s;
       $('askScreen').textContent = 'Screen is being shared';
@@ -325,7 +345,7 @@
   }
 
   function readyCheck() {
-    if (!state.camStream) return;
+    if (!state.camStream || !state.scrStream) return;
     $('ready').classList.remove('hidden');
     $('start').disabled = false;
   }
@@ -419,6 +439,7 @@
     if (pos.phase !== state.phase || changed) {
       state.phase = pos.phase;
       paintPhase();
+      saveRecord(record());
     }
     var end = pos.phase === 'work' ? state.sched[pos.at].w : state.sched[pos.at].t;
     var left = (end - now) / 1000;
@@ -429,7 +450,9 @@
       + '  ·  question ' + (pos.at + 1) + ' of ' + state.questions.length;
     var total = Math.floor((now - state.startedAt) / 1000);
     $('phase').textContent = 'Total ' + mmss(total) + ' of ' + mmss(CAP_S);
+    if (now - lastStamp > 5000) { lastStamp = now; saveRecord(record()); }
   }
+  var lastStamp = 0;
 
   // Both buttons re-read the wall clock rather than trusting state.phase, because the page
   // paints on a 250 ms tick and a click can land after a deadline passed but before the tick
@@ -449,11 +472,47 @@
     tick();
   });
 
-  // A hidden tab gets its timers throttled, so the moment they come back the clock is
-  // re-read from the wall rather than waiting for the next throttled tick.
+  // ---------------- leaving the page ----------------
+  // Lucas 2026-09-01, on candidates looking things up: "I'm not saying it's not okay to have
+  // ChatGPT open or to Google something. I just kinda wanna know what's happening. How often
+  // do they need to reference things? Are they able to do it quickly?" So the page does not
+  // block anything. It writes down every time they leave it, during which question and which
+  // window, and for how long, and that goes up with the recording and into the Slack thread.
+  // The screen recording shows WHAT they opened. This is the index into it.
+  var awayAt = 0, awayWhy = '';
+  function leave(why) {
+    if (!state.tick || awayAt) return;
+    awayAt = Date.now(); awayWhy = why;
+  }
+  function back() {
+    if (!awayAt) return;
+    var now = Date.now(), from = awayAt;
+    awayAt = 0;
+    if (now - from < 1000) return;      // clicking the address bar blurs the window too
+    noteAway(from, now, awayWhy);
+  }
+  function noteAway(from, to, why) {
+    var pos = position(from);
+    if (pos.phase === 'over') return;
+    state.away.push({ q: pos.at + 1, p: pos.phase === 'work' ? 'w' : 't',
+                      f: Math.round((from - state.startedAt) / 1000),
+                      t: Math.round((to - state.startedAt) / 1000), y: why });
+    if (state.away.length > 60) state.away = state.away.slice(-60);
+    saveRecord(record());
+  }
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && state.tick) tick();
+    if (document.hidden) { leave('h'); return; }
+    back();
+    // A hidden tab gets its timers throttled, so the moment they come back the clock is
+    // re-read from the wall rather than waiting for the next throttled tick.
+    if (state.tick) tick();
   });
+  window.addEventListener('blur', function () { leave('b'); });
+  window.addEventListener('focus', function () { back(); });
+  // The record is stamped the instant the page goes away, so a reload or a close is measured
+  // from the real moment and lands on the right question. The five-second stamp in tick() is
+  // the fallback for a crash, where nothing fires.
+  window.addEventListener('pagehide', function () { if (state.tick && !finishing) saveRecord(record()); });
 
   // ---------------- the doc tools ----------------
   function keepSelection(btn, fn) {
@@ -565,6 +624,8 @@
       state.reloads = state.resuming.reloads;
       state.name = state.resuming.name || state.name;
       state.email = state.resuming.email || state.email;
+      state.away = state.resuming.away || [];
+      if (state.resuming.seen) noteAway(state.resuming.seen, Date.now(), 'c');
       if (state.questions.length !== state.resuming.qids.length) {
         // The bank was rotated under them. Redraw from the seed rather than hand out a fresh
         // clock, and keep their original deadlines.
@@ -589,14 +650,15 @@
       return;
     }
 
-    var mic = state.camStream.getAudioTracks();
-    if (state.scrStream) {
-      var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
-      startRecorder('screen', screenPlusVoice, 1200000);
-      startRecorder('camera', state.camStream, 350000);
-    } else {
-      startRecorder('camera', state.camStream, 900000);
+    if (!state.scrStream) {
+      flag('setupflag', 'The screen is not being shared. Press the Screen button and share your '
+        + 'entire screen.', true);
+      return;
     }
+    var mic = state.camStream.getAudioTracks();
+    var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
+    startRecorder('screen', screenPlusVoice, 1200000);
+    startRecorder('camera', state.camStream, 350000);
 
     state.at = -1; state.phase = '';
     show('record');
@@ -653,6 +715,12 @@
             'minutes=' + Math.round((Date.now() - state.startedAt) / 60000),
             'started=' + new Date(state.startedAt).toISOString(),
             'cap=' + CAP_S, 'reloads=' + state.reloads,
+            'surface=' + (state.surface || 'unknown'),
+            'away=' + state.away.length,
+            'awaysec=' + state.away.reduce(function (n, a) { return n + (a.t - a.f); }, 0),
+            'awaylog=' + esc2(state.away.map(function (a) {
+              return 'q' + a.q + a.p + ' ' + a.f + '-' + a.t + ' ' + a.y;
+            }).join(', ').slice(0, 900)),
             'teaches=' + esc2(picks.join(', ') || 'not stated'),
             'questions=' + esc2(state.questions.map(function (q) { return q.id; }).join(' '))
            ].join('|');

@@ -465,7 +465,7 @@
     if (finishing || !state.sched.length) return;
     var now = Date.now();
     var pos = position(now);
-    if (pos.phase === 'over') { finish(); return; }
+    if (pos.phase === 'over' || !state.questions[pos.at]) { finish(); return; }
     var changed = false;
     if (pos.at !== state.at) {
       state.at = pos.at;
@@ -671,11 +671,33 @@
 
   $('start').addEventListener('click', function () {
     var b = bank() || { questions: [] };
+    // Everything that can refuse a Start comes before anything is written down, so a refused
+    // Start never leaves a running clock behind it for a reload to find (independent review,
+    // 2026-09-01 night: the record used to be saved before these two checks).
+    if (!state.scrStream) {
+      flag('setupflag', 'The screen is not being shared. Press the Screen button and share your '
+        + 'entire screen.', true);
+      return;
+    }
+    if (!state.heard && !confirm('The microphone has not picked anything up yet. Say a sentence '
+        + 'and watch the bar under your camera move. Start anyway?')) return;
     if (state.resuming) {
       // Same questions, same deadlines, whatever they did to the page in between.
       var byId = {};
       b.questions.forEach(function (q) { byId[q.id] = q; });
-      state.questions = state.resuming.qids.map(function (id) { return byId[id]; }).filter(Boolean);
+      // A question rotated out of the bank since they started is replaced IN ITS SLOT, so the
+      // ones that survived stay where the deadlines expect them and the count always matches
+      // the schedule. Replacements come from the seeded draw first, then anything live.
+      var taken = {}, fresh = null, fi = 0;
+      state.resuming.qids.forEach(function (id) { if (byId[id]) taken[id] = true; });
+      state.questions = state.resuming.qids.map(function (id) {
+        if (byId[id]) return byId[id];
+        if (!fresh) fresh = chooseQuestions().concat(b.questions);
+        while (fi < fresh.length && taken[fresh[fi].id]) fi++;
+        var q = fresh[fi] || null;
+        if (q) taken[q.id] = true;
+        return q;
+      }).filter(Boolean);
       state.sched = state.resuming.sched;
       state.picks = state.resuming.picks || state.picks;
       state.startedAt = state.resuming.started;
@@ -684,11 +706,6 @@
       state.email = state.resuming.email || state.email;
       state.away = state.resuming.away || [];
       if (state.resuming.seen) noteAway(state.resuming.seen, Date.now(), 'c');
-      if (state.questions.length !== state.resuming.qids.length) {
-        // The bank was rotated under them. Redraw from the seed rather than hand out a fresh
-        // clock, and keep their original deadlines.
-        state.questions = chooseQuestions();
-      }
     } else {
       state.questions = chooseQuestions();
       if (!state.questions.length) { alert('No questions matched what you picked. Go back and pick again.'); return; }
@@ -708,13 +725,6 @@
       return;
     }
 
-    if (!state.scrStream) {
-      flag('setupflag', 'The screen is not being shared. Press the Screen button and share your '
-        + 'entire screen.', true);
-      return;
-    }
-    if (!state.heard && !confirm('The microphone has not picked anything up yet. Say a sentence '
-        + 'and watch the bar under your camera move. Start anyway?')) return;
     var mic = state.camStream.getAudioTracks();
     var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
     startRecorder('screen', screenPlusVoice, 1200000);

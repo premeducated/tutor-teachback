@@ -51,6 +51,15 @@ button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line
 button.ghost:hover{background:#F7F4EE}
 button.stop{background:var(--bad)}
 button.stop:hover{background:#8A2222}
+/* The setup steps: the one to press is the filled teal button, a finished step turns into a
+   ticked pill, and a step that is not yet available is a dashed outline. Before this the
+   finished step was a grey disabled button and the next one a white outline, so nothing on
+   the screen said what to press (Lucas, 2026-09-02). */
+button.done,button.done:disabled{background:#E9F5F3;color:var(--teal-ink);border:1px solid #BFE0DB;cursor:default}
+button.done::before{content:"\2713\00a0\00a0"}
+button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5CFC3}
+.stepnote{color:var(--ink-soft);font-size:14px;margin:10px 0 0}
+.stepnote b{color:var(--ink)}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .note{font-size:13px;color:var(--ink-soft);line-height:1.55}
 .flag{border-left:3px solid var(--warn);background:#FDF6F1;padding:12px 14px;border-radius:0 9px 9px 0;
@@ -85,6 +94,10 @@ button.stop:hover{background:#8A2222}
    sitting on it, which is always, because it replaces the button just clicked. */
 .bar .ghost{color:#fff;border-color:#3C5B7A;background:transparent}
 .bar .ghost:hover{background:rgba(255,255,255,.14);border-color:#5A7A9B}
+/* Armed: the first press turned the button into its own confirmation. */
+.bar button.armed{outline:2px solid #fff;outline-offset:2px}
+.bar .ghost.armed{background:rgba(255,255,255,.22)}
+.bar button.stop.armed{background:#C43A3A}
 .tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#fff;border:1px solid var(--line);
   border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:78px;z-index:39}
 .tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink)}
@@ -298,16 +311,17 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           <div class="note">to work it, then <span id="dTeach">5 minutes</span> to teach it  ·  question 1 of 2</div></div>
         <div class="row">
           <button class="ghost">Start teaching now</button>
-          <button class="stop">Stop and send</button>
         </div>
       </div>
       <p class="note" style="margin-bottom:16px">This bar sits at the top of the real screen. The
       clock counts down: <strong><span id="dWork">1 minute 30 seconds</span></strong> to read and
       work each question, then <strong><span id="dTeach2">5 minutes</span></strong> to teach it,
-      and it moves on by itself. <strong>Start teaching now</strong> gives up the rest of your
-      reading time. <strong>Next question</strong> appears in its place while you teach and
-      gives up the rest of your teaching time. <strong>Stop and send</strong> ends everything
-      early. None of them can give you more time.</p>
+      and it moves on by itself. The bar shows <strong>one button at a time</strong>, and you never
+      have to press it. <strong>Start teaching now</strong> gives up the rest of your reading
+      time. <strong>Next question</strong> takes its place while you teach and gives up the rest
+      of your teaching time. On the last question it reads <strong>Finish and send</strong>, which
+      ends the attempt and sends the recording. Next question and Finish and send each need
+      two presses, so a stray click does nothing, and none of them can give you more time.</p>
 
       <div class="try">
         <strong>Try each of these on the practice question below:</strong>
@@ -382,13 +396,16 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     <div class="card">
       <h1>Let the page see and hear you.</h1>
       <div id="setupflag" class="flag hidden"></div>
-      <p>Two prompts from your browser. Camera and microphone first, then the screen. When you
-      pick the screen, <strong>choose your whole screen</strong> rather than a single tab, so you
-      can move between whatever you use to teach.</p>
+      <p>Two buttons, in order, and the browser asks you once for each. Camera and microphone
+      first, then the screen. When you pick the screen, <strong>choose your whole screen</strong>
+      rather than a single tab, so you can move between whatever you use to teach.</p>
       <div class="row">
         <button id="askCam">1. Camera and microphone</button>
-        <button id="askScreen" class="ghost" disabled>2. Screen</button>
+        <button id="askScreen" class="ghost" disabled>2. Share your whole screen</button>
       </div>
+      <p class="stepnote" id="stepnote"><b>Step 1 of 2.</b> Press the first button and allow the
+      camera and microphone when the browser asks.</p>
+      <p class="stepnote hidden" id="osnote"></p>
       <div class="previews">
         <figure><video id="pvCam" muted playsinline autoplay></video>
           <figcaption>You<div class="meter"><i id="lvl"></i></div>Say a sentence and the bar should move.
@@ -414,7 +431,6 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       <div class="row">
         <button id="ready2" class="ghost">Start teaching now</button>
         <button id="next" class="ghost hidden">Next question</button>
-        <button id="stop" class="stop">Stop and send</button>
       </div>
     </div>
 
@@ -466,15 +482,15 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
   <section id="done" class="hidden">
     <div class="card">
       <h1>That is in. Thank you.</h1>
-      <p>Your teaching sample reached us and it is attached to your application. Dr. Lucas
-      watches these himself and you will hear back either way.</p>
+      <p>Your teaching sample reached us and it is attached to your application. You will hear
+      back either way.</p>
       <p class="note">You can close this page.</p>
     </div>
   </section>
 
   <footer>Premeducated  ·  premeducated.com</footer>
 </div>
-<script src="questions.js"></script>
-<script src="app.js"></script>
+<script src="questions.js?v=20260902201239"></script>
+<script src="app.js?v=20260902201239"></script>
 </body>
 </html>

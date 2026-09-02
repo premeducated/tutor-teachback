@@ -331,7 +331,10 @@
       $('pvCam').srcObject = s;
       $('askCam').textContent = 'Camera and microphone are on';
       $('askCam').disabled = true;
+      $('askCam').classList.add('done');
       $('askScreen').disabled = false;
+      $('askScreen').classList.remove('ghost');
+      stepNote(2);
       meter(s);
       unflag('setupflag');
     }).catch(function (err) { flag('setupflag', permMessage(err, 'camera and microphone'), true); });
@@ -352,14 +355,16 @@
         s.getTracks().forEach(function (t) { t.stop(); });
         flag('setupflag', 'You shared ' + (settings.displaySurface === 'browser' ? 'a single tab'
           : 'a single window') + '. Share your entire screen instead, so whatever you open to '
-          + 'teach or look something up is in the recording. Press the Screen button again and '
-          + 'pick the whole screen.', true);
+          + 'teach or look something up is in the recording. Press Share your whole screen '
+          + 'again and pick the whole screen.', true);
         return;
       }
       state.scrStream = s;
       $('pvScr').srcObject = s;
       $('askScreen').textContent = 'Screen is being shared';
       $('askScreen').disabled = true;
+      $('askScreen').classList.add('done');
+      stepNote(3);
       s.getVideoTracks()[0].addEventListener('ended', function () {
         if (state.recs.length) finish();
       });
@@ -368,11 +373,56 @@
     }).catch(function (err) { flag('setupflag', permMessage(err, 'screen'), true); });
   });
 
+  // Which computer this is, because the fix for a blocked screen is a different path on each.
+  // A Mac gates screen sharing at the operating system, so the browser never asks the person
+  // at all until it is switched on there and reopened. Windows has no such gate for the screen.
+  var OS = (function () {
+    var p = String(navigator.platform || ''), ua = String(navigator.userAgent || '');
+    if (/Mac/.test(p) || /Macintosh/.test(ua)) return 'mac';
+    if (/Win/.test(p) || /Windows/.test(ua)) return 'win';
+    return 'other';
+  })();
+  var MAC_SCREEN = 'System Settings, Privacy & Security, Screen Recording (called Screen & System '
+    + 'Audio Recording on newer Macs)';
+  function stepNote(n) {
+    var el = $('stepnote');
+    if (n >= 3) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.innerHTML = n === 1
+      ? '<b>Step 1 of 2.</b> Press the first button and allow the camera and microphone when the browser asks.'
+      : '<b>Step 2 of 2.</b> Press <b>Share your whole screen</b>. The browser opens a picker: choose the '
+        + 'whole screen, not a window or a tab.';
+  }
+  (function osNote() {
+    var el = $('osnote');
+    if (OS === 'mac') el.innerHTML = 'Your Mac may ask as well as the browser. The first time a browser '
+      + 'shares the screen, macOS sends you to ' + MAC_SCREEN + ' to switch the browser on, and the '
+      + 'browser then has to be quit and opened again. Do that before you press Start.';
+    else if (OS === 'win') el.innerHTML = 'Windows asks nothing extra for the screen. If the camera or '
+      + 'microphone never asks, open Settings, Privacy & security, then Camera and Microphone, and '
+      + 'allow apps and desktop apps to use them.';
+    else return;
+    el.classList.remove('hidden');
+  })();
+
   function permMessage(err, what) {
     var n = err && err.name;
-    if (n === 'NotAllowedError') return 'You turned down the ' + what + ' request, or the browser '
-      + 'blocked it. Reload the page and allow it. On a Mac you may also need System Settings, '
-      + 'Privacy and Security.';
+    if (n === 'NotAllowedError') {
+      var base = 'You cancelled the ' + what + ' request, or the browser blocked it. Press the button '
+        + 'again and allow it. If the browser never asks, ';
+      if (what === 'screen') {
+        if (OS === 'mac') return base + 'your Mac is blocking it: open ' + MAC_SCREEN + ', switch this '
+          + 'browser on, quit the browser completely, then open your link again.';
+        if (OS === 'win') return base + 'press the button again and choose the whole screen in the '
+          + 'window that opens. Windows has no setting to change for this.';
+        return base + 'check the site permissions in the browser settings and reload.';
+      }
+      if (OS === 'mac') return base + 'open System Settings, Privacy & Security, then Camera and '
+        + 'Microphone, switch this browser on, and reload.';
+      if (OS === 'win') return base + 'open Settings, Privacy & security, then Camera and Microphone, '
+        + 'allow apps and desktop apps to use them, and reload.';
+      return base + 'check the site permissions in the browser settings and reload.';
+    }
     if (n === 'NotFoundError' || n === 'DevicesNotFoundError') return 'No ' + what + ' was found on this computer.';
     if (n === 'NotReadableError') return 'Another program is holding the ' + what + '. Close Zoom, '
       + 'Teams or any other call and try again.';
@@ -455,7 +505,13 @@
     $('bar').classList.toggle('teach', !work);
     $('ready2').classList.toggle('hidden', !work);
     $('next').classList.toggle('hidden', work);
+    disarm($('next'));
     $('next').textContent = last ? 'Finish and send' : 'Next question';
+    // One button on the bar at a time (Lucas, 2026-09-02: two side by side and a candidate
+    // cannot know which one to press). On the last question it is the red one, since it ends
+    // the attempt.
+    $('next').classList.toggle('stop', last);
+    $('next').classList.toggle('ghost', !last);
     $('phaseNote').classList.toggle('teach', !work);
     if (work) {
       $('phaseNote').textContent = 'Read it and work it. You are recording, so think out loud if '
@@ -466,8 +522,8 @@
       $('phaseNote').textContent = 'Teach it, out loud. Your student got it wrong and is on the '
         + 'page. Ask them what they picked and why, and lead them to it. They answer what you ask '
         + 'and stay quiet while you explain. ' + (last
-          ? 'When the clock hits zero the recording ends and sends itself.'
-          : 'When the clock hits zero the next question replaces this one.');
+          ? 'When the clock hits zero the recording ends and sends itself. Finish and send does the same sooner.'
+          : 'When the clock hits zero the next question replaces this one. Next question does the same sooner.');
       student.begin(state.questions[state.at], state.at + 1, state.startedAt);
     }
   }
@@ -512,7 +568,27 @@
     pullEarlier(pos.at, state.sched[pos.at].w - now);
     tick();
   });
+  // A stray press must not end a question or the attempt, but a confirm() dialog is not the
+  // guard: it freezes the page's scripts while it is open, so the tick that enforces the clock
+  // stops with it and the tape keeps rolling past the deadline (independent review,
+  // 2026-09-02). So the button arms itself on the first press and acts on the second within
+  // five seconds, and nothing ever blocks. A phase change disarms it.
+  function arm(btn, label) {
+    if (btn.dataset.armed === '1') { disarm(btn); return true; }
+    btn.dataset.armed = '1'; btn.dataset.label = btn.textContent; btn.textContent = label;
+    btn.classList.add('armed');
+    clearTimeout(btn._armT); btn._armT = setTimeout(function () { disarm(btn); }, 5000);
+    return false;
+  }
+  function disarm(btn) {
+    clearTimeout(btn._armT);
+    if (btn.dataset.armed !== '1') return;
+    btn.dataset.armed = ''; btn.classList.remove('armed');
+    if (btn.dataset.label) btn.textContent = btn.dataset.label;
+  }
   $('next').addEventListener('click', function () {
+    var last = state.at + 1 >= state.questions.length;
+    if (!arm($('next'), last ? 'Press again to finish and send' : 'Press again to move on')) return;
     var now = Date.now(), pos = position(now);
     if (pos.phase !== 'teach' || pos.at !== state.at) { tick(); return; }
     pullEarlier(pos.at, state.sched[pos.at].t - now);
@@ -946,8 +1022,8 @@
     // Start never leaves a running clock behind it for a reload to find (independent review,
     // 2026-09-01 night: the record used to be saved before these two checks).
     if (!state.scrStream) {
-      flag('setupflag', 'The screen is not being shared. Press the Screen button and share your '
-        + 'entire screen.', true);
+      flag('setupflag', 'The screen is not being shared. Press Share your whole screen and pick '
+        + 'the entire screen.', true);
       return;
     }
     // One attempt, and Lucas wants them told so before the clock starts: "please make sure you
@@ -1016,12 +1092,6 @@
     show('record');
     tick();
     state.tick = setInterval(tick, 250);   // wall clock inside, never a tick count
-  });
-
-  $('stop').addEventListener('click', function () {
-    if (Date.now() - state.startedAt < 60000 &&
-        !confirm('That is under a minute. Stop and send anyway?')) return;
-    finish();
   });
 
   window.addEventListener('beforeunload', function (e) {

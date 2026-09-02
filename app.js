@@ -858,7 +858,9 @@
       call({ start: true }).then(function (r) {
         if (g !== gen) return;
         bubble('student', r.reply);
-        push('student', r.reply, { opening: true });
+        // pick is the wrong letter the student committed to, checked server side, kept in the
+        // transcript so whoever reviews the tape can see what the tutor had to work from.
+        push('student', r.reply, { opening: true, pick: r.pick || '' });
         return new Promise(function (res) { speak(r.reply, res); });
       }).catch(function (e) {
         if (g !== gen) return;

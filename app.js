@@ -62,7 +62,7 @@
     camStream: null, scrStream: null,
     recs: [], parts: {}, blobs: [],
     startedAt: 0, tick: null, level: null,
-    bank: null, questions: [], at: -1, phase: '',
+    bank: null, questions: [], at: -1, phase: '', heard: false,
     sched: [], reloads: 0, resuming: null,
     away: [], surface: '',
     picks: { l1: false, l2all: false, subs: [] }
@@ -73,10 +73,10 @@
 
   // ---------------- screens ----------------
   function show(which) {
-    ['gate', 'resume', 'again', 'pick', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
+    ['gate', 'resume', 'again', 'pick', 'practice', 'setup', 'record', 'upload', 'done'].forEach(function (s) {
       $(s).classList.toggle('hidden', s !== which);
     });
-    var step = { gate: 0, resume: 0, again: 4, pick: 1, setup: 2, record: 3, upload: 4, done: 4 }[which];
+    var step = { gate: 0, resume: 0, again: 5, pick: 1, practice: 2, setup: 3, record: 4, upload: 5, done: 5 }[which];
     [].forEach.call($('steps').children, function (d, i) { d.classList.toggle('on', i <= step); });
     window.scrollTo(0, 0);
   }
@@ -127,6 +127,10 @@
   $('tWork').textContent = spoken(WORK_S);
   $('tTeach').textContent = spoken(TEACH_S);
   $('tTotal').textContent = Math.ceil(CAP_S / 60) + ' minutes';
+  $('dWork').textContent = spoken(WORK_S);
+  $('dTeach').textContent = spoken(TEACH_S);
+  $('dTeach2').textContent = spoken(TEACH_S);
+  document.querySelector('.bar.demo .clock').textContent = mmss(WORK_S);
   if (state.name) $('n').value = state.name;
   if (state.email) $('e').value = state.email;
 
@@ -212,6 +216,14 @@
       return flag('pickflag', 'Pick at least one. If you do not want all of Level 2 / Step 2, '
         + 'tick the individual subjects you are comfortable with instead.');
     }
+    show('practice');
+  });
+  // The practice screen is off the clock and unrecorded. Lucas 2026-09-01: "a quick tutorial
+  // would help with a fake question they could practice highlighting, bolding, drawing,
+  // whatever else they have, and then a screen to confirm their mic and camera are working."
+  $('toSetup2').addEventListener('click', function () {
+    setPen(false);
+    eraseInk();
     toSetup();
   });
 
@@ -355,12 +367,21 @@
       var AC = window.AudioContext || window.webkitAudioContext;
       var ac = new AC(), src = ac.createMediaStreamSource(stream), an = ac.createAnalyser();
       an.fftSize = 512; src.connect(an);
-      var buf = new Uint8Array(an.frequencyBinCount);
+      var buf = new Uint8Array(an.frequencyBinCount), loud = 0;
+      $('micStatus').textContent = 'Nothing heard yet.';
+      $('micStatus').classList.remove('ok');
       state.level = setInterval(function () {
         an.getByteTimeDomainData(buf);
         var peak = 0;
         for (var i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
         $('lvl').style.width = Math.min(100, (peak / 60) * 100) + '%';
+        // Three loud-ish frames in a row is speech, not a click on the desk.
+        loud = peak > 10 ? loud + 1 : 0;
+        if (loud >= 3 && !state.heard) {
+          state.heard = true;
+          $('micStatus').textContent = 'Microphone is picking you up.';
+          $('micStatus').classList.add('ok');
+        }
       }, 90);
     } catch (e) { /* the meter is a nicety, never a blocker */ }
   }
@@ -519,13 +540,16 @@
     btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
     btn.addEventListener('click', fn);
   }
-  keepSelection($('bBold'), function () { document.execCommand('bold'); });
-  keepSelection($('bMark'), function () {
+  // Both toolbars, the practice one and the real one, are wired the same way. execCommand
+  // acts on the live selection, so it does not care which card the selection is in.
+  function all(sel) { return [].slice.call(document.querySelectorAll(sel)); }
+  all('[data-tool=bold]').forEach(function (b) { keepSelection(b, function () { document.execCommand('bold'); }); });
+  all('[data-tool=mark]').forEach(function (b) { keepSelection(b, function () {
     // styleWithCSS matters: without it some browsers emit <font> and the highlight is lost.
     try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
     document.execCommand('hiliteColor', false, HILITE);
-  });
-  keepSelection($('bClear'), function () { document.execCommand('removeFormat'); });
+  }); });
+  all('[data-tool=clear]').forEach(function (b) { keepSelection(b, function () { document.execCommand('removeFormat'); }); });
 
   // ---------------- drawing ----------------
   var ink = $('ink'), ctx = ink.getContext('2d');
@@ -555,18 +579,22 @@
   window.addEventListener('scroll', redraw, { passive: true });
   sizeInk();
 
-  keepSelection($('bPen'), function () {
-    penOn = !penOn;
+  function setPen(on) {
+    penOn = on;
     ink.classList.toggle('live', penOn);
-    $('bPen').classList.toggle('on', penOn);
-    $('bPen').textContent = penOn ? 'Drawing, click to stop' : 'Draw on the screen';
-  });
-  keepSelection($('bErase'), function () { strokes = []; cur = null; redraw(); });
-  [].forEach.call(document.querySelectorAll('.swatch'), function (b) {
+    all('[data-tool=pen]').forEach(function (b) {
+      b.classList.toggle('on', penOn);
+      b.textContent = penOn ? 'Drawing, click to stop' : 'Draw on the screen';
+    });
+  }
+  function eraseInk() { strokes = []; cur = null; redraw(); }
+  all('[data-tool=pen]').forEach(function (b) { keepSelection(b, function () { setPen(!penOn); }); });
+  all('[data-tool=erase]').forEach(function (b) { keepSelection(b, eraseInk); });
+  all('.swatch').forEach(function (b) {
     keepSelection(b, function () {
       penColor = b.getAttribute('data-c');
-      [].forEach.call(document.querySelectorAll('.swatch'), function (o) {
-        o.classList.toggle('on', o === b);
+      all('.swatch').forEach(function (o) {
+        o.classList.toggle('on', o.getAttribute('data-c') === penColor);
       });
     });
   });
@@ -655,6 +683,8 @@
         + 'entire screen.', true);
       return;
     }
+    if (!state.heard && !confirm('The microphone has not picked anything up yet. Say a sentence '
+        + 'and watch the bar under your camera move. Start anyway?')) return;
     var mic = state.camStream.getAudioTracks();
     var screenPlusVoice = new MediaStream(state.scrStream.getVideoTracks().concat(mic));
     startRecorder('screen', screenPlusVoice, 1200000);

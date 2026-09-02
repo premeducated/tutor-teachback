@@ -119,6 +119,15 @@ ol.opts li{color:var(--ink);margin-bottom:7px;line-height:1.55}
 .steps div{flex:1;height:4px;border-radius:3px;background:#E4DED2}
 .steps div.on{background:var(--teal)}
 .big{font-size:34px;font-weight:800;letter-spacing:-.8px;font-variant-numeric:tabular-nums;margin:4px 0 10px}
+.bar.demo{position:static;margin-bottom:10px}
+.bar.demo button{pointer-events:none;opacity:.85}
+/* relative, not static: a static element has no z-index, and the toolbar would then sit
+   under the fixed drawing canvas, so once the pen was on it could never be switched off. */
+.tools.plain{position:relative;top:auto}
+.try{background:#F7F4EE;border-radius:11px;padding:14px 16px;margin:0 0 14px}
+.try li{margin-bottom:5px}
+.mic{font-size:13px;font-weight:600;color:var(--warn);margin-top:6px}
+.mic.ok{color:var(--teal-ink)}
 #ink{position:fixed;inset:0;z-index:30;pointer-events:none}
 #ink.live{pointer-events:auto;cursor:crosshair}
 footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0}
@@ -134,7 +143,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     <div class="brand">Premeducated <span>·  Teaching sample</span></div>
   </header>
 
-  <div class="steps" id="steps"><div class="on"></div><div></div><div></div><div></div><div></div></div>
+  <div class="steps" id="steps"><div class="on"></div><div></div><div></div><div></div><div></div><div></div></div>
 
   <!-- ---------- 1. gate ---------- -->
   <section id="gate">
@@ -156,10 +165,11 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <li><strong>Teach, do not answer.</strong> You get the vignette cold, with no answer, the
         same as the student would. Teach through it the way you would with someone who got it
         wrong and does not know why.</li>
-        <li><strong>Look things up if you need to.</strong> Google, your notes, an AI, whatever
-        you would reach for in a real session. Your whole screen is in the recording and the page
-        notes each time you leave it, and what we are interested in is how you use it, not
-        whether.</li>
+        <li><strong>You can use Google or an AI if you get stuck, though we would rather you did
+        not.</strong> Your whole screen is in the recording and the page notes each time you
+        leave it.</li>
+        <li><strong>Show an image from Google Images if it helps you explain something.</strong>
+        Images, drawings and notes are welcome and none of them is required.</li>
       </ol>
       <p class="note">You can type on the question, bold it, highlight it and draw on the screen,
       the same way you would use a shared document in a session.</p>
@@ -225,7 +235,79 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     </div>
   </section>
 
-  <!-- ---------- 3. setup ---------- -->
+  <!-- ---------- 3. practice, off the clock ---------- -->
+  <section id="practice" class="hidden">
+    <div class="card">
+      <h1>Try the tools first.</h1>
+      <p>Nothing is recording and no clock is running. This is what the real screen looks like,
+      with a practice question that does not count.</p>
+
+      <div class="bar demo">
+        <div><span class="dot"></span><span class="clock">1:30</span>
+          <div class="note">to work it, then <span id="dTeach">5 minutes</span> to teach it  ·  question 1 of 2</div></div>
+        <div class="row">
+          <button class="ghost">Start teaching now</button>
+          <button class="stop">Stop and send</button>
+        </div>
+      </div>
+      <p class="note" style="margin-bottom:16px">This bar sits at the top of the real screen. The
+      clock counts down: <strong><span id="dWork">1 minute 30 seconds</span></strong> to read and
+      work each question, then <strong><span id="dTeach2">5 minutes</span></strong> to teach it,
+      and it moves on by itself. <strong>Start teaching now</strong> gives up the rest of your
+      reading time. <strong>Next question</strong> appears in its place while you teach and
+      gives up the rest of your teaching time. <strong>Stop and send</strong> ends everything
+      early. None of them can give you more time.</p>
+
+      <div class="try">
+        <strong>Try each of these on the practice question below:</strong>
+        <ol style="margin:8px 0 0">
+          <li>Select a few words and press <strong>Highlight</strong>, then <strong>B</strong> for bold.</li>
+          <li>Press <strong>Draw on the screen</strong>, drag anywhere on the page, pick a colour,
+          then press it again to stop drawing. <strong>Erase drawing</strong> clears it.</li>
+          <li>Type into the question itself, and into the blank area under it.</li>
+        </ol>
+      </div>
+
+      <div class="tools plain" data-tools>
+        <button data-tool="bold" title="Bold the selected text"><b>B</b></button>
+        <button data-tool="mark" title="Highlight the selected text">Highlight</button>
+        <button data-tool="clear" title="Remove formatting from the selection">Clear</button>
+        <div class="sep"></div>
+        <button data-tool="pen">Draw on the screen</button>
+        <button class="swatch on" data-c="#D93A3A" style="background:#D93A3A"></button>
+        <button class="swatch" data-c="#0E8C81" style="background:#0E8C81"></button>
+        <button class="swatch" data-c="#10314F" style="background:#10314F"></button>
+        <button data-tool="erase" class="ghost">Erase drawing</button>
+      </div>
+
+      <div class="prompt">Practice question. It is not one of yours, it is easy on purpose, and
+      nobody sees what you do here.</div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="q" id="pqbox" contenteditable="true" spellcheck="false">
+          <div class="qtag">Practice  ·  not scored</div>
+          <div class="stem">A 24-year-old woman comes to the clinic because of 3 months of fatigue.
+          She has heavy menstrual periods. She takes no medications. Examination shows pale
+          conjunctivae. Hemoglobin is 9.8 g/dL and mean corpuscular volume is 71 fL. Which of the
+          following is the most likely additional laboratory finding?</div>
+          <ol class="opts">
+            <li>Decreased serum ferritin</li>
+            <li>Decreased total iron-binding capacity</li>
+            <li>Increased reticulocyte count</li>
+            <li>Increased serum iron</li>
+            <li>Normal red cell distribution width</li>
+          </ol>
+        </div>
+      </div>
+      <div class="scratch" contenteditable="true" spellcheck="false"
+           data-ph="Room to work. Type here the way you would on a shared doc with a student."></div>
+      <div class="row" style="margin-top:16px">
+        <button id="toSetup2">Got it, set up my camera and screen</button>
+        <span class="note">Your drawing is wiped before the real question.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 4. setup ---------- -->
   <section id="setup" class="hidden">
     <div class="card">
       <h1>Let the page see and hear you.</h1>
@@ -239,17 +321,19 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       </div>
       <div class="previews">
         <figure><video id="pvCam" muted playsinline autoplay></video>
-          <figcaption>You<div class="meter"><i id="lvl"></i></div>Say something and the bar should move.</figcaption></figure>
+          <figcaption>You<div class="meter"><i id="lvl"></i></div>Say a sentence and the bar should move.
+          <div class="mic" id="micStatus"></div></figcaption></figure>
         <figure><video id="pvScr" muted playsinline autoplay></video>
           <figcaption>Your screen</figcaption></figure>
       </div>
-      <div id="ready" class="ok hidden">Camera, microphone and screen are all live. Press Start
-      and the first question appears with its clock running.</div>
+      <div id="ready" class="ok hidden">Camera, microphone and screen are all live. Check that you
+      can see yourself and that the bar moved when you spoke. Press Start and the first question
+      appears with its clock running.</div>
       <button id="start" disabled>Start, and show me the first question</button>
     </div>
   </section>
 
-  <!-- ---------- 4. record ---------- -->
+  <!-- ---------- 5. record ---------- -->
   <section id="record" class="hidden">
     <div class="bar" id="bar">
       <div><span class="dot"></span><span class="clock" id="clock">0:00</span>
@@ -261,16 +345,16 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       </div>
     </div>
 
-    <div class="tools">
-      <button id="bBold" title="Bold the selected text"><b>B</b></button>
-      <button id="bMark" title="Highlight the selected text">Highlight</button>
-      <button id="bClear" title="Remove formatting from the selection">Clear</button>
+    <div class="tools" data-tools>
+      <button data-tool="bold" id="bBold" title="Bold the selected text"><b>B</b></button>
+      <button data-tool="mark" id="bMark" title="Highlight the selected text">Highlight</button>
+      <button data-tool="clear" id="bClear" title="Remove formatting from the selection">Clear</button>
       <div class="sep"></div>
-      <button id="bPen">Draw on the screen</button>
+      <button data-tool="pen" id="bPen">Draw on the screen</button>
       <button class="swatch on" data-c="#D93A3A" style="background:#D93A3A"></button>
       <button class="swatch" data-c="#0E8C81" style="background:#0E8C81"></button>
       <button class="swatch" data-c="#10314F" style="background:#10314F"></button>
-      <button id="bErase" class="ghost">Erase drawing</button>
+      <button data-tool="erase" id="bErase" class="ghost">Erase drawing</button>
       <span class="note" style="margin-left:auto" id="phase"></span>
     </div>
 
@@ -282,7 +366,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
          data-ph="Room to work. Type here the way you would on a shared doc with a student."></div>
   </section>
 
-  <!-- ---------- 5. upload ---------- -->
+  <!-- ---------- 6. upload ---------- -->
   <section id="upload" class="hidden">
     <div class="card">
       <h1 id="upTitle">Sending your recording.</h1>
@@ -295,7 +379,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
     </div>
   </section>
 
-  <!-- ---------- 6. done ---------- -->
+  <!-- ---------- 7. done ---------- -->
   <section id="done" class="hidden">
     <div class="card">
       <h1>That is in. Thank you.</h1>

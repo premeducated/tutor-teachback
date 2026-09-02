@@ -254,8 +254,8 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
       <div id="pickflag" class="flag hidden"></div>
 
       <label class="pick" id="p1"><input type="checkbox" id="c1">
-        <span><b>COMLEX Level 1 / USMLE Step 1</b>
-        <span>All of it except OMM and biostats, which have their own ticks below.</span></span></label>
+        <span><b>COMLEX Level 1 / USMLE Step 1, all of it</b>
+        <span>Every basic science subject. OMM and biostats are listed under On every exam, below.</span></span></label>
 
       <label class="pick" id="p2"><input type="checkbox" id="c2">
         <span><b>COMLEX Level 2 / USMLE Step 2, all of it</b>
@@ -263,17 +263,21 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
       <div id="subsWrap" class="subs hidden">
         <p class="note" style="margin:0 0 10px">Or leave that unticked and pick only the Level 2
-        and Step 2 subjects you are comfortable with:</p>
+        and Step 2 shelf subjects you are comfortable with:</p>
         <div id="subs"></div>
       </div>
 
-      <label class="pick" id="p3"><input type="checkbox" id="c3">
-        <span><b>OMM</b>
-        <span>Osteopathic principles and manipulative treatment, on every COMLEX level.</span></span></label>
-
-      <label class="pick" id="p4"><input type="checkbox" id="c4">
-        <span><b>Biostatistics and epidemiology</b>
-        <span>On every exam, COMLEX and USMLE.</span></span></label>
+      <div id="everyWrap" class="subs">
+        <p class="note" style="margin:0 0 10px"><strong>On every exam.</strong> These sit outside the
+        two exams above because they are tested on both. If you tutor one of these on its own,
+        this is your tick.</p>
+        <label class="pick" id="p3"><input type="checkbox" id="c3">
+          <span><b>OMM</b>
+          <span>Osteopathic principles and manipulative treatment, every COMLEX level.</span></span></label>
+        <label class="pick" id="p4"><input type="checkbox" id="c4">
+          <span><b>Biostatistics and epidemiology</b>
+          <span>COMLEX and USMLE, every level.</span></span></label>
+      </div>
 
       <div class="row" style="margin-top:6px">
         <button id="toSetup">Continue</button>
@@ -392,10 +396,13 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         <figure><video id="pvScr" muted playsinline autoplay></video>
           <figcaption>Your screen</figcaption></figure>
       </div>
+      <div class="flag" id="oneTake"><strong>You only get one attempt.</strong> Once you press Start
+      the first question appears, the clock runs on its own to the end, and reloading or closing
+      the page does not stop it and does not change your questions. Be ready before you press it.</div>
       <div id="ready" class="ok hidden">Camera, microphone and screen are all live. Check that you
       can see yourself and that the bar moved when you spoke. Press Start and the first question
-      appears with its clock running.</div>
-      <button id="start" disabled>Start, and show me the first question</button>
+      appears with its clock running. <strong>This is your one attempt.</strong></div>
+      <button id="start" disabled>Start my one attempt</button>
     </div>
   </section>
 

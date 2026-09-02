@@ -241,8 +241,8 @@
     var pool = poolFor();
     if (!pool.total) {
       return flag('pickflag', 'Pick at least one. If you do not want all of Level 2 / Step 2, '
-        + 'tick the individual subjects you are comfortable with instead. OMM and biostats '
-        + 'are their own ticks.');
+        + 'tick the shelf subjects you are comfortable with instead. OMM and biostats are '
+        + 'under On every exam.');
     }
     show('practice');
   });
@@ -948,8 +948,18 @@
         + 'entire screen.', true);
       return;
     }
-    if (!state.heard && !confirm('The microphone has not picked anything up yet. Say a sentence '
-        + 'and watch the bar under your camera move. Start anyway?')) return;
+    // One attempt, and Lucas wants them told so before the clock starts: "please make sure you
+    // give a pop-up that says, are you sure you're ready? You only have one attempt." A resume
+    // is not a new attempt, so it only gets the microphone warning if that one applies.
+    var micWarn = state.heard ? '' : 'The microphone has not picked anything up yet. Say a '
+      + 'sentence and watch the bar under your camera move.\n\n';
+    if (state.resuming) {
+      if (micWarn && !confirm(micWarn + 'Start anyway?')) return;
+    } else if (!confirm(micWarn + 'You only get one attempt. When you press OK the first question '
+        + 'appears and the clock starts. It does not stop, and reloading or closing the page does '
+        + 'not give you more time or a different question.\n\nAre you sure you are ready?')) {
+      return;
+    }
     if (state.resuming) {
       // Same questions, same deadlines, whatever they did to the page in between.
       var byId = {};

@@ -83,13 +83,19 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
 .only b{color:var(--ink)}
 /* ---- recording ---- */
 .bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 16px;min-height:68px;
-  background:var(--ink);color:#fff;border-radius:12px;margin-bottom:14px;position:sticky;top:0;z-index:40;
-  box-shadow:0 -12px 0 var(--paper)}
-/* Stuck at the top, the bar's rounded corners and the strip under it are page, and the
-   question text scrolling under them showed through (Lucas, 2026-09-02: "a little gap
-   between the top header and the toolbar... you can see the text behind it"). The shadow
-   above is a paper block behind the top corners, and the toolbar paints the strip below,
-   .tools:before. Both are paper on paper until something scrolls under them. */
+  background:var(--ink);color:#fff;border-radius:12px;margin-bottom:14px;position:sticky;top:0;z-index:40}
+/* Stuck at the top, the bar and the toolbar are a band across the whole window, and nothing
+   scrolling under the band shows: not the question text (Lucas, 2026-09-02: "a little gap
+   between the top header and the toolbar... you can see the text behind it") and not a pen
+   stroke drawn beside the question (Lucas, the same night, a teal line "still behind the
+   header"). Each element carries a paper box-shadow spread wider than any screen, clipped to
+   its own row: the bar's reaches 14 px down to the toolbar, the toolbar's is shifted up by
+   its own spread so it ends at the toolbar's bottom edge and the tool hint below stays
+   visible. The corners' notches are covered the same way. Paper on paper until something
+   scrolls under. body.recording is flat paper so the band matches at every scroll. */
+#record > .bar{box-shadow:0 0 0 100vmax var(--paper);clip-path:inset(0 -100vmax -14px -100vmax)}
+#record > .tools{box-shadow:0 -100vmax 0 100vmax var(--paper);clip-path:inset(-14px -100vmax -80px -100vmax)}
+body.recording{background:var(--paper)}
 .bar button{white-space:nowrap;min-width:190px}
 .bar.teach{background:#0A4A44}
 .bar.last{background:#6E2A16}
@@ -115,7 +121,6 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
 .tools{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;background:#fff;border:1px solid var(--line);
   border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:calc(var(--barh, 68px) + 14px);
   z-index:39;height:50px}
-.tools:before{content:'';position:absolute;left:-1px;right:-1px;top:-27px;height:26px;background:var(--paper)}
 .tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink);white-space:nowrap}
 .tools button:hover{background:#EAE5DA}
 .tools button.on{background:var(--teal);color:#fff}
@@ -182,7 +187,6 @@ ol.opts li.struck .xo{color:var(--ink)}
 /* relative, not static: a static element has no z-index, and the toolbar would then sit
    under the fixed drawing canvas, so once the pen was on it could never be switched off. */
 .tools.plain{position:relative;top:auto}
-.tools.plain:before{display:none}
 .try{background:#F7F4EE;border-radius:11px;padding:14px 16px;margin:0 0 14px}
 .try li{margin-bottom:5px}
 .mic{font-size:13px;font-weight:600;color:var(--warn);margin-top:6px}
@@ -536,7 +540,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
   <footer>Premeducated  ·  premeducated.com</footer>
 </div>
-<script src="questions.js?v=20260903024522"></script>
-<script src="app.js?v=20260903024522"></script>
+<script src="questions.js?v=20260903033908"></script>
+<script src="app.js?v=20260903033908"></script>
 </body>
 </html>

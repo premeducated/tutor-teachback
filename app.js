@@ -502,10 +502,42 @@
   }
 
   // ---------------- rendering a question ----------------
+  // A stem's lab values come as a table: lines that start with "|" are its rows, one per
+  // line, the way the bank writes them (bank/restore_tables.py). Everything else is prose.
+  // They used to be one run-on line, "Test Patient's Value Reference Range Synovial fluid
+  // WBC 96,000/mm³ <200/mm³ ..." (Lucas, 2026-09-02, on his own test run).
+  function stemHtml(stem) {
+    var html = '', rows = [];
+    function flush() {
+      if (!rows.length) return;
+      // "Test | Patient's Value | Reference Range" is a header row. "Temperature | 37.1°C" is
+      // data from the first row, and a row with a number in it is never a header.
+      var head = !/\d/.test(rows[0].join(' '));
+      html += '<table class="labs">';
+      rows.forEach(function (r, i) {
+        var tag = head && i === 0 ? 'th' : 'td';
+        html += '<tr>' + r.map(function (c) { return '<' + tag + '>' + esc(c) + '</' + tag + '>'; }).join('') + '</tr>';
+      });
+      html += '</table>';
+      rows = [];
+    }
+    String(stem).split('\n').forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      if (line.charAt(0) === '|') {
+        rows.push(line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) { return c.trim(); }));
+      } else {
+        flush();
+        html += '<p>' + esc(line) + '</p>';
+      }
+    });
+    flush();
+    return html;
+  }
   function render(q, idx) {
     var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
       + '  ·  ' + esc(examLabel(q.level)) + '  ·  ' + esc(q.group) + '</div>'
-      + '<div class="stem">' + esc(q.stem) + '</div><ol class="opts">';
+      + '<div class="stem">' + stemHtml(q.stem) + '</div><ol class="opts">';
     q.options.forEach(function (o) { html += '<li>' + XO + LOCK + esc(o) + '</li>'; });
     html += '</ol>';
     $('qbox').innerHTML = html;
@@ -519,6 +551,19 @@
     $('scratch').innerHTML = '';
     window.scrollTo(0, 0);
   }
+
+  // The toolbar sticks to the bottom edge of the bar, and the student panel under the
+  // toolbar. The bar's height is measured, not assumed, so nothing drifts apart or overlaps
+  // when its copy wraps (Lucas, 2026-09-02: page text showed through the gap between them).
+  (function () {
+    var bar = $('bar');
+    function set() {
+      if (bar.offsetHeight) document.documentElement.style.setProperty('--barh', bar.offsetHeight + 'px');
+    }
+    if (window.ResizeObserver) new ResizeObserver(set).observe(bar);
+    window.addEventListener('resize', set);
+    set();
+  })();
 
   function paintPhase() {
     var last = state.at + 1 >= state.questions.length;

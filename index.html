@@ -83,7 +83,13 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
 .only b{color:var(--ink)}
 /* ---- recording ---- */
 .bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 16px;min-height:68px;
-  background:var(--ink);color:#fff;border-radius:12px;margin-bottom:14px;position:sticky;top:10px;z-index:40}
+  background:var(--ink);color:#fff;border-radius:12px;margin-bottom:14px;position:sticky;top:0;z-index:40;
+  box-shadow:0 -12px 0 var(--paper)}
+/* Stuck at the top, the bar's rounded corners and the strip under it are page, and the
+   question text scrolling under them showed through (Lucas, 2026-09-02: "a little gap
+   between the top header and the toolbar... you can see the text behind it"). The shadow
+   above is a paper block behind the top corners, and the toolbar paints the strip below,
+   .tools:before. Both are paper on paper until something scrolls under them. */
 .bar button{white-space:nowrap;min-width:190px}
 .bar.teach{background:#0A4A44}
 .bar.last{background:#6E2A16}
@@ -107,7 +113,9 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
    under it jumped, and the sticky offsets were wrong (Lucas, 2026-09-02: "this bar extends
    and then unextends", "kept moving on its own"). */
 .tools{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;background:#fff;border:1px solid var(--line);
-  border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:88px;z-index:39;height:50px}
+  border-radius:11px;padding:8px 10px;margin-bottom:12px;position:sticky;top:calc(var(--barh, 68px) + 14px);
+  z-index:39;height:50px}
+.tools:before{content:'';position:absolute;left:-1px;right:-1px;top:-27px;height:26px;background:var(--paper)}
 .tools button{padding:7px 12px;font-size:13px;font-weight:600;border-radius:8px;background:#F4F1EA;color:var(--ink);white-space:nowrap}
 .tools button:hover{background:#EAE5DA}
 .tools button.on{background:var(--teal);color:#fff}
@@ -131,6 +139,12 @@ button.ghost:disabled{background:transparent;color:#9AA7B4;border:1px dashed #D5
 .qtag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
   color:var(--teal-ink);background:#EAF5F3;padding:4px 9px;border-radius:20px;margin-bottom:12px}
 .stem{font-size:16.5px;line-height:1.62;color:var(--ink);margin-bottom:16px}
+.stem p{margin:0 0 10px}
+.stem p:last-child{margin-bottom:0}
+/* Lab values come as a table, drawn from the "|" rows in the stem (stemHtml in app.js). */
+.stem table.labs{border-collapse:collapse;margin:4px 0 12px;font-size:15px;line-height:1.4}
+.stem .labs th,.stem .labs td{border:1px solid var(--line);padding:5px 12px;text-align:left;vertical-align:top}
+.stem .labs th{background:#F4F1EA;font-weight:700}
 ol.opts{list-style:upper-alpha;padding-left:24px;margin:0}
 ol.opts li{color:var(--ink);margin-bottom:7px;line-height:1.55}
 .xo{float:right;margin-left:12px;padding:0 6px;border-radius:5px;cursor:pointer;color:var(--ink-soft);
@@ -178,6 +192,7 @@ ol.opts li.picked .lock:before{content:"\2713\00a0"}
 /* relative, not static: a static element has no z-index, and the toolbar would then sit
    under the fixed drawing canvas, so once the pen was on it could never be switched off. */
 .tools.plain{position:relative;top:auto}
+.tools.plain:before{display:none}
 .try{background:#F7F4EE;border-radius:11px;padding:14px 16px;margin:0 0 14px}
 .try li{margin-bottom:5px}
 .mic{font-size:13px;font-weight:600;color:var(--warn);margin-top:6px}
@@ -194,8 +209,8 @@ ol.opts li.picked .lock:before{content:"\2713\00a0"}
   #record{display:grid;grid-template-columns:minmax(0,1fr) 320px;column-gap:24px;align-items:start}
   #record > *{grid-column:1}
   #record > .bar,#record > .tools{grid-column:1 / -1}
-  #record > #student{grid-column:2;grid-row:3 / span 4;position:sticky;top:150px;margin:0;
-    display:flex;flex-direction:column;max-height:calc(100vh - 170px)}
+  #record > #student{grid-column:2;grid-row:3 / span 4;position:sticky;top:calc(var(--barh, 68px) + 76px);margin:0;
+    display:flex;flex-direction:column;max-height:calc(100vh - var(--barh, 68px) - 96px)}
   #record > #student.hidden{display:none !important}
 }
 .st-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:8px}
@@ -532,7 +547,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
   <footer>Premeducated  ·  premeducated.com</footer>
 </div>
-<script src="questions.js?v=20260902233310"></script>
-<script src="app.js?v=20260902233310"></script>
+<script src="questions.js?v=20260903014731"></script>
+<script src="app.js?v=20260903014731"></script>
 </body>
 </html>

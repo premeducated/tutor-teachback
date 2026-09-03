@@ -1068,7 +1068,11 @@
         if (state.tick) saveRecord(record());
         if (r.reply && !sameAsLast(r.reply)) {
           bubble('student', r.reply);
-          push('student', r.reply);
+          // What the turn's roll told the student to do off its card (admit, bluff, tangent),
+          // whether the model says the line is made up, and whether it asked a question of its
+          // own, so a tape can be graded line by line afterwards (Lucas, 2026-09-03: "check
+          // that file to see if the AI's answers were correct").
+          push('student', r.reply, { mode: r.mode || '', made: r.bluffed === true, probed: r.probed === true });
           return new Promise(function (res) { speak(r.reply, res); });
         }
       }).catch(function (e) {

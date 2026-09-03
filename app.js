@@ -535,8 +535,11 @@
     return html;
   }
   function render(q, idx) {
+    // The level and nothing else. The discipline is a hint (Lucas, 2026-09-02 late, on
+    // "Respiratory" in the tag: "this shouldn't give away the system / discipline the
+    // question is testing").
     var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
-      + '  ·  ' + esc(examLabel(q.level)) + '  ·  ' + esc(q.group) + '</div>'
+      + '  ·  ' + esc(examLabel(q.level)) + '</div>'
       + '<div class="stem">' + stemHtml(q.stem) + '</div><ol class="opts">';
     q.options.forEach(function (o) { html += '<li>' + XO + esc(o) + '</li>'; });
     html += '</ol>';
@@ -579,8 +582,11 @@
       $('phaseNote').textContent = 'Read it and work it. Teaching starts when the clock hits zero.';
       student.stop();
     } else {
-      $('phaseNote').textContent = 'Teach it out loud. Your student got it wrong. Ask them what they '
-        + 'picked and why.';
+      // No banner in the teaching window. "Your student got it wrong" told the tutor the
+      // student's answer was wrong before they had worked out the answer themselves (Lucas,
+      // 2026-09-02 late: "the tutor doesn't even for sure know the answer, don't give them
+      // hints like that"). The bar's "left to teach it" is the whole cue.
+      $('phaseNote').textContent = '';
       student.begin(state.questions[state.at], state.at + 1, state.startedAt);
     }
   }

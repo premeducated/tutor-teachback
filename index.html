@@ -152,16 +152,6 @@ ol.opts li{color:var(--ink);margin-bottom:7px;line-height:1.55}
 .xo:hover{background:#F1EDE4;color:var(--ink)}
 ol.opts li.struck{text-decoration:line-through;color:var(--ink-soft)}
 ol.opts li.struck .xo{color:var(--ink)}
-/* Lock in: the answer the candidate commits to. It rides up with the recording and the bot
-   checks it against the key (Lucas, 2026-09-02: "are we requiring them to lock in an answer
-   choice somehow? because currently, there's no way to do that"). */
-.lock{float:right;margin-left:8px;padding:1px 9px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;
-  color:var(--teal-ink);background:#EAF5F3;border:1px solid #BFE0DB;line-height:1.55;user-select:none;-webkit-user-select:none;
-  white-space:nowrap}
-.lock:hover{background:#D9EEEA}
-ol.opts li.picked{background:#F0F8F7;border-radius:8px;box-shadow:0 0 0 2px #BFE0DB}
-ol.opts li.picked .lock{background:var(--teal);color:#fff;border-color:var(--teal)}
-ol.opts li.picked .lock:before{content:"\2713\00a0"}
 .board{margin-top:14px;border:2px dashed #CFD9E2;border-radius:11px;min-height:240px;background:#fff;position:relative;
   cursor:crosshair;touch-action:none}
 .board-tag{position:absolute;left:12px;top:10px;font-size:12px;color:#8A98A8;pointer-events:none;user-select:none}
@@ -282,7 +272,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
         Images, drawings and notes are welcome and none of them is required.</li>
       </ol>
       <p class="note">You can type anywhere on the question, highlight it, cross out choices,
-      lock in your answer, and draw on a whiteboard or over the question itself.</p>
+      and draw on a whiteboard or over the question itself.</p>
     </div>
     <div class="card">
       <h2>Who is this</h2>
@@ -380,7 +370,6 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           into the stem and type.</li>
           <li>Select words and press <strong>Highlight</strong>, <strong>B</strong> or
           <strong>Strike</strong>. The <strong>&#x2715;</strong> beside a choice crosses it out.</li>
-          <li>Press <strong>Lock in</strong> beside the answer you would pick.</li>
           <li><strong>Draw in the whiteboard</strong> under the question. To draw over the question
           itself, or anywhere else on the page, press <strong>Draw anywhere</strong> first.</li>
           <li>Press <strong>Talk to the student</strong>. Ask them what they picked and why.</li>
@@ -411,11 +400,11 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
           conjunctivae. Hemoglobin is 9.8 g/dL and mean corpuscular volume is 71 fL. Which of the
           following is the most likely additional laboratory finding?</div>
           <ol class="opts">
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Decreased serum ferritin</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Decreased total iron-binding capacity</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Increased reticulocyte count</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Increased serum iron</li>
-            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span><span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>Normal red cell distribution width</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Decreased serum ferritin</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Decreased total iron-binding capacity</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Increased reticulocyte count</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Increased serum iron</li>
+            <li><span class="xo" contenteditable="false" title="Cross this choice out">&#x2715;</span>Normal red cell distribution width</li>
           </ol>
         </div>
       </div>
@@ -547,7 +536,7 @@ footer{text-align:center;font-size:12.5px;color:var(--ink-soft);padding:10px 0 0
 
   <footer>Premeducated  ·  premeducated.com</footer>
 </div>
-<script src="questions.js?v=20260903014731"></script>
-<script src="app.js?v=20260903014731"></script>
+<script src="questions.js?v=20260903024522"></script>
+<script src="app.js?v=20260903024522"></script>
 </body>
 </html>

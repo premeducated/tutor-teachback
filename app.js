@@ -76,7 +76,7 @@
     startedAt: 0, tick: null, level: null,
     bank: null, questions: [], at: -1, phase: '', heard: false,
     sched: [], reloads: 0, resuming: null,
-    away: [], surface: '', chat: [], answers: {},
+    away: [], surface: '', chat: [],
     picks: { l1: false, l2all: false, subs: [], omm: false, bio: false }
   };
 
@@ -135,7 +135,7 @@
     return { v: 1, started: state.startedAt, qids: state.questions.map(function (q) { return q.id; }),
              sched: state.sched, picks: state.picks, reloads: state.reloads, done: false,
              name: state.name, email: state.email, away: state.away, chat: state.chat,
-             answers: state.answers, seen: Date.now() };
+             seen: Date.now() };
   }
 
   // ---------------- gate ----------------
@@ -538,13 +538,9 @@
     var html = '<div class="qtag">Question ' + (idx + 1) + ' of ' + state.questions.length
       + '  ·  ' + esc(examLabel(q.level)) + '  ·  ' + esc(q.group) + '</div>'
       + '<div class="stem">' + stemHtml(q.stem) + '</div><ol class="opts">';
-    q.options.forEach(function (o) { html += '<li>' + XO + LOCK + esc(o) + '</li>'; });
+    q.options.forEach(function (o) { html += '<li>' + XO + esc(o) + '</li>'; });
     html += '</ol>';
     $('qbox').innerHTML = html;
-    // Back after a reload: the answer they locked in comes back with the question.
-    var letter = state.answers[q.id] || '';
-    var picked = letter ? LETTERS.indexOf(letter) : -1;    // indexOf('') is 0, not -1
-    if (picked >= 0) markPicked($('qbox').querySelectorAll('ol.opts li')[picked]);
     // A new question is a clean page (Lucas, 2026-09-02: "moving on to the next question
     // should clear the drawings"). The notes box goes with it: they were about the last one.
     eraseInk();
@@ -580,8 +576,7 @@
     $('next').classList.toggle('ghost', !last);
     $('phaseNote').classList.toggle('teach', !work);
     if (work) {
-      $('phaseNote').textContent = 'Read it and work it. Lock in your answer. Teaching starts when '
-        + 'the clock hits zero.';
+      $('phaseNote').textContent = 'Read it and work it. Teaching starts when the clock hits zero.';
       student.stop();
     } else {
       $('phaseNote').textContent = 'Teach it out loud. Your student got it wrong. Ask them what they '
@@ -747,45 +742,18 @@
   selectionTool('[data-tool=strike]', 'Strike', function () { document.execCommand('strikeThrough'); });
   selectionTool('[data-tool=clear]', 'Clear', function () { document.execCommand('removeFormat'); });
   var XO = '<span class="xo" contenteditable="false" title="Cross this choice out">\u2715</span>';
-  // Lock in, Lucas 2026-09-02: "are we requiring them to lock in an answer choice somehow?
-  // because currently, there's no way to do that." One per question, it rides up with the
-  // tapes as the letter and the option text, and the bot checks it against the key. It is not
-  // a gate: the clock moves on either way, and a question with no lock says so in Slack.
-  var LOCK = '<span class="lock" contenteditable="false" title="Lock in this answer">Lock in</span>';
-  var LETTERS = 'ABCDEFGHIJ';
-  function markPicked(li) {
-    if (!li) return;
-    li.classList.add('picked');
-    var k = li.querySelector('.lock'); if (k) k.textContent = 'Your answer';
-  }
+  // There is no Lock in pill any more. It went in on 2026-09-02 afternoon and out that night:
+  // "get rid of the lock in... it doesn't matter anyway if they actually pick an answer or
+  // not, because we're not grading them." Nothing about their answer rides up with the tapes.
   document.addEventListener('mousedown', function (e) {
     var c = e.target.classList;
-    if (c && (c.contains('xo') || c.contains('lock'))) e.preventDefault();
+    if (c && c.contains('xo')) e.preventDefault();
   });
   document.addEventListener('click', function (e) {
     var x = e.target;
-    if (!x.classList) return;
-    if (x.classList.contains('xo')) {
-      e.preventDefault();
-      x.parentNode.classList.toggle('struck');
-      return;
-    }
-    if (!x.classList.contains('lock')) return;
+    if (!x.classList || !x.classList.contains('xo')) return;
     e.preventDefault();
-    var li = x.parentNode, ol = li.parentNode;
-    var lis = [].slice.call(ol.children), idx = lis.indexOf(li);
-    var already = li.classList.contains('picked');
-    lis.forEach(function (l) {
-      l.classList.remove('picked');
-      var k = l.querySelector('.lock'); if (k) k.textContent = 'Lock in';
-    });
-    if (!already) markPicked(li);
-    var real = $('qbox').contains(li) && state.questions[state.at];
-    if (real) {
-      var qid = state.questions[state.at].id;
-      if (already) delete state.answers[qid]; else state.answers[qid] = LETTERS[idx] || '';
-      saveRecord(record());
-    }
+    x.parentNode.classList.toggle('struck');
   });
 
   // ---------------- drawing ----------------
@@ -927,6 +895,12 @@
     }
     function call(body) {
       body.a = state.applicant || 'none'; body.q = q.id; body.stem = q.stem; body.options = q.options;
+      // The student's knowledge was fixed on its opening turn (knows and gaps, written by the
+      // function) and goes back with every call, so what it does not know stays not known
+      // however many times it is asked (Lucas, 2026-09-02 night: "clearly, it knows. You just
+      // have to keep prompting it"). It lives on the opening turn, so a reload keeps it.
+      var op = mine().filter(function (t) { return t.opening; })[0];
+      if (op && op.knows) { body.knows = op.knows; body.gaps = op.gaps || []; }
       return fetch(STUDENT_URL, { method: 'POST', headers: { 'content-type': 'application/json' },
                                   body: JSON.stringify(body) })
         .then(function (r) {
@@ -1132,7 +1106,7 @@
         bubble('student', r.reply);
         // pick is the wrong letter the student committed to, checked server side, kept in the
         // transcript so whoever reviews the tape can see what the tutor had to work from.
-        push('student', r.reply, { opening: true, pick: r.pick || '' });
+        push('student', r.reply, { opening: true, pick: r.pick || '', knows: r.knows || [], gaps: r.gaps || [] });
         return new Promise(function (res) { speak(r.reply, res); });
       }).catch(function (e) {
         if (g !== gen) return;
@@ -1183,9 +1157,9 @@
     var box = $('pqbox');
     var stem = box.querySelector('.stem').textContent.replace(/\s+/g, ' ').trim();
     var options = [].map.call(box.querySelectorAll('ol.opts li'), function (li) {
-      // The cross and the Lock in pill are inside the choice. Read the choice without them.
+      // The cross is inside the choice. Read the choice without it.
       var c = li.cloneNode(true);
-      [].forEach.call(c.querySelectorAll('.xo, .lock'), function (x) { x.parentNode.removeChild(x); });
+      [].forEach.call(c.querySelectorAll('.xo'), function (x) { x.parentNode.removeChild(x); });
       return c.textContent.replace(/\s+/g, ' ').trim();
     });
     practiceTurns.length = 0;
@@ -1315,7 +1289,6 @@
       state.email = state.resuming.email || state.email;
       state.away = state.resuming.away || [];
       state.chat = state.resuming.chat || [];
-      state.answers = state.resuming.answers || {};
       if (state.resuming.seen) noteAway(state.resuming.seen, Date.now(), 'c');
     } else {
       state.questions = chooseQuestions();
@@ -1376,16 +1349,11 @@
     if (state.picks.subs.length) picks.push(state.picks.subs.join(' and '));
     if (state.picks.omm) picks.push('OMM');
     if (state.picks.bio) picks.push('Biostats');
-    var q = state.questions.filter(function (x) { return x.id === item.qid; })[0];
-    var letter = state.answers[item.qid] || '';
-    var atext = (letter && q) ? (q.options[LETTERS.indexOf(letter)] || '') : '';
     return ['name=' + esc2(state.name), 'email=' + esc2(state.email),
             'applicant=' + esc2(state.applicant || 'none'), 'role=' + item.role,
             'q=' + (item.q + 1), 'of=' + state.questions.length, 'qid=' + esc2(item.qid),
             'minutes=' + item.minutes,
             'elapsed=' + Math.round((Date.now() - state.startedAt) / 60000),
-            'answer=' + (letter || '-'), 'answertext=' + esc2(atext).slice(0, 200),
-            'answers=' + esc2(state.questions.map(function (x) { return state.answers[x.id] || '-'; }).join(' ')),
             'started=' + new Date(state.startedAt).toISOString(),
             'cap=' + capS(), 'reloads=' + state.reloads,
             'surface=' + (state.surface || 'unknown'),
@@ -1427,7 +1395,7 @@
     return { v: 2, applicant: state.applicant || 'none', name: state.name,
              started: new Date(state.startedAt).toISOString(), work_s: WORK_S, teach_s: TEACH_S,
              speech: SR ? 'browser' : 'typed',
-             q: at + 1, of: state.questions.length, qid: qid, answer: state.answers[qid] || '',
+             q: at + 1, of: state.questions.length, qid: qid,
              questions: state.questions.map(function (q) { return q.id; }),
              turns: state.chat.filter(function (t) { return t.q === qid; }) };
   }

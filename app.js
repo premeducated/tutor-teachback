@@ -45,12 +45,13 @@
   var STUDENT_URL = 'https://ztmogkvswdrinseajzdw.supabase.co/functions/v1/teachback-student';
 
   // 90 seconds is the pace of the exam itself (COMLEX Level 1 gives about 82 seconds an item,
-  // Step 1 about 90). Eight minutes to teach is Lucas's ruling of 2026-09-01 late night, made
-  // for the student: "up to 8 minutes for each question if we get more prompting with the
-  // socratic thing." It was five before the student existed. Two questions come to nineteen
-  // minutes. Change these two lines and nothing else, every number on the page follows.
+  // Step 1 about 90). Ten minutes to teach is Lucas's ruling of 2026-09-13, after Mason
+  // Livingston's run ran out of clock on three of four questions and he asked for more time.
+  // It was eight from 2026-09-01 ("up to 8 minutes for each question if we get more prompting
+  // with the socratic thing") and five before the student existed. Two questions come to
+  // twenty-three minutes. Change these two lines and nothing else, every number on the page follows.
   var WORK_S = 90;
-  var TEACH_S = 480;
+  var TEACH_S = 600;
 
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
@@ -1190,9 +1191,10 @@
   // 2026-09-02: six minutes made a 60 MB screen file, so four full questions would pass 400 MB,
   // and this Cloudinary plan refuses any video over 100 MB. And a page closed early used to
   // lose everything. Now each question's tapes go up the moment it ends, in the background,
-  // while the next one runs. The biggest possible file is one 9.5 minute question at the
-  // screen bitrate below, about 80 MB with the voice track.
-  var SCREEN_BPS = 1000000, CAMERA_BPS = 300000;
+  // while the next one runs. The biggest possible file is one 11.5 minute question at the
+  // screen bitrate below, about 82 MB with the voice track. At 1 Mbps it was 94.5 MB once the
+  // clock went to ten minutes, too close to the cap. Mason's real screen files ran about half this.
+  var SCREEN_BPS = 850000, CAMERA_BPS = 300000;
 
   function startRecorder(key, stream, videoBps) {
     var mime = pickMime(['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus',
@@ -1200,8 +1202,14 @@
     var opts = { audioBitsPerSecond: 96000, videoBitsPerSecond: videoBps };
     if (mime) opts.mimeType = mime;
     var rec;
+    // A browser that refuses the container still gets the bitrate caps, or a ten minute
+    // question at its default bitrate could pass the 100 MB upload cap.
     try { rec = new MediaRecorder(stream, opts); }
-    catch (e) { rec = new MediaRecorder(stream); }
+    catch (e) {
+      try { rec = new MediaRecorder(stream, { audioBitsPerSecond: opts.audioBitsPerSecond,
+                                              videoBitsPerSecond: videoBps }); }
+      catch (e2) { rec = new MediaRecorder(stream); }
+    }
     // The parts live on the recorder, not in a shared slot: the next question's recorder for
     // the same camera starts before this one has flushed its last chunk.
     rec.__parts = [];
